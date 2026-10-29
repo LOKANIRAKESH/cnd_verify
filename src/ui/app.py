@@ -1,232 +1,385 @@
 """
-src/ui/app.py
-Streamlit dashboard for CND-Verify — full three-agent pipeline with detailed finding cards.
-Each finding card shows: page number, section, rule violated, why it matters, quoted text, fix.
+src/ui/app.py  —  CND-Verify professional dashboard
+Three pages: Upload & Verify | Score Dashboard | Review Findings
 """
 
 import streamlit as st
 import plotly.graph_objects as go
-import json
-import os
-import sys
+import json, os, sys, time, requests
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.ingestion.document_loader import prepare_document
-from src.orchestration.graph import compile_graph
-from src.scoring.score_engine import get_routing_message
+from src.scoring.score_engine import run_score_engine, get_routing_message
 
+
+def _check_ollama() -> tuple[bool, str]:
+    """Returns (is_running, model_status)."""
+    try:
+        r = requests.get("http://localhost:11434/api/tags", timeout=3)
+        if r.status_code == 200:
+            models = [m["name"] for m in r.json().get("models", [])]
+            llama_found = any("llama3.1" in m or "llama3" in m for m in models)
+            if llama_found:
+                return True, "Ollama running ✓  |  llama3.1 ready ✓"
+            elif models:
+                return True, f"Ollama running ✓  |  llama3.1 NOT found (available: {', '.join(models[:2])})"
+            else:
+                return True, "Ollama running ✓  |  No models pulled yet — run: ollama pull llama3.1"
+    except Exception:
+        pass
+    return False, "Ollama NOT running — LLM checks disabled"
+
+# ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="CND-Verify",
-    page_icon="🔍",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
+# ── Global CSS ────────────────────────────────────────────────────────────────
+st.markdown("""
+<style>
+    /* Sidebar */
+    section[data-testid="stSidebar"] { background: #0f172a; }
+    section[data-testid="stSidebar"] * { color: #e2e8f0 !important; }
+
+    /* Agent status card */
+    .agent-card {
+        background: #1e293b;
+        border-radius: 10px;
+        padding: 16px 20px;
+        margin-bottom: 10px;
+        border-left: 4px solid #3b82f6;
+    }
+    .agent-card.ok  { border-left-color: #22c55e; }
+    .agent-card.warn{ border-left-color: #f59e0b; }
+    .agent-card.bad { border-left-color: #ef4444; }
+    .agent-card h4  { margin: 0 0 4px 0; font-size: 0.95rem; color: #94a3b8; }
+    .agent-card .big{ font-size: 2rem; font-weight: 700; color: #f1f5f9; }
+    .agent-card .sub{ font-size: 0.78rem; color: #64748b; margin-top: 2px; }
+
+    /* Severity badge */
+    .badge {
+        display: inline-block; padding: 2px 10px;
+        border-radius: 999px; font-size: 0.72rem;
+        font-weight: 700; letter-spacing: .04em;
+    }
+    .badge-CRITICAL { background:#fecaca; color:#991b1b; }
+    .badge-HIGH     { background:#fed7aa; color:#9a3412; }
+    .badge-WARNING  { background:#fef08a; color:#854d0e; }
+    .badge-INFO     { background:#bfdbfe; color:#1e40af; }
+
+    /* Finding card */
+    .finding-card {
+        background: #1e293b;
+        border-radius: 10px;
+        padding: 18px 22px;
+        margin-bottom: 14px;
+        border-left: 4px solid #64748b;
+    }
+    .finding-card.CRITICAL { border-left-color: #ef4444; }
+    .finding-card.HIGH     { border-left-color: #f97316; }
+    .finding-card.WARNING  { border-left-color: #eab308; }
+    .finding-card.INFO     { border-left-color: #3b82f6; }
+
+    /* Page badge */
+    .page-badge {
+        display: inline-block;
+        background: #334155; color: #93c5fd;
+        border-radius: 6px; padding: 3px 10px;
+        font-size: 0.8rem; font-weight: 600;
+    }
+    /* Metric card */
+    .metric-box {
+        background: #1e293b; border-radius: 10px;
+        padding: 14px 18px; text-align: center;
+    }
+    .metric-box .val { font-size: 1.8rem; font-weight: 700; color: #f1f5f9; }
+    .metric-box .lbl { font-size: 0.75rem; color: #64748b; margin-top: 2px; }
+
+    /* Tag chip */
+    .tag-chip {
+        display: inline-block; background: #0f172a;
+        color: #7dd3fc; border: 1px solid #1e3a5f;
+        border-radius: 5px; padding: 2px 8px;
+        font-size: 0.75rem; font-family: monospace;
+        margin: 2px;
+    }
+    /* Section row */
+    .sec-row {
+        display: flex; align-items: center;
+        padding: 5px 0; border-bottom: 1px solid #1e293b;
+        font-size: 0.85rem;
+    }
+    .sec-found { color: #4ade80; margin-right: 8px; }
+    .sec-miss  { color: #f87171; margin-right: 8px; }
+
+    div[data-testid="stExpander"] > div { background: #1e293b; }
+    .stProgress > div > div { background: #3b82f6; }
+</style>
+""", unsafe_allow_html=True)
+
+
 # ── Sidebar ───────────────────────────────────────────────────────────────────
+with st.sidebar:
+    st.markdown("## 🔍 CND-Verify")
+    st.markdown("*Control Narrative Pre-Verification*")
+    st.divider()
+    page = st.radio("Navigation", ["Upload & Verify", "Score Dashboard", "Review Findings"])
+    st.divider()
 
-st.sidebar.title("CND-Verify")
-st.sidebar.caption("Control Narrative Pre-Verification System")
-st.sidebar.markdown("*Detects errors before PLC code generation*")
-st.sidebar.divider()
+    # Ollama health check
+    ollama_ok, ollama_msg = _check_ollama()
+    if ollama_ok:
+        st.success(ollama_msg)
+    else:
+        st.error(ollama_msg)
+        st.caption("Start with: `ollama serve`  then  `ollama pull llama3.1`")
+        st.caption("Without Ollama: only deterministic checks run (missing sections, tag patterns)")
+    st.divider()
 
-page = st.sidebar.radio(
-    "Navigation",
-    ["Upload & Verify", "Score Dashboard", "Review Findings"],
-    index=0,
-)
+    if st.session_state.get("verification_state"):
+        vqs = st.session_state.verification_state.get("vqs_scores", {})
+        score = vqs.get("composite", 0) * 100
+        routing = vqs.get("routing_decision", "")
+        color = {"AUTO_PASS": "🟢", "NEEDS_REVIEW": "🟡", "FAIL": "🔴", "MANDATORY_REVISION": "🔴"}.get(routing, "⚪")
+        st.markdown(f"**Last result:** {color} {score:.0f}%")
+        st.caption(routing.replace("_", " "))
+        st.divider()
 
-if st.session_state.get("verification_state"):
-    vqs = st.session_state.verification_state.get("vqs_scores", {})
-    composite = vqs.get("composite", 0)
-    routing = vqs.get("routing_decision", "")
-    icon = {"AUTO_PASS": "✅", "NEEDS_REVIEW": "⚠️", "FAIL": "❌", "MANDATORY_REVISION": "🚫"}.get(routing, "")
-    st.sidebar.divider()
-    st.sidebar.metric("Current Score", f"{composite*100:.0f} / 100")
-    st.sidebar.caption(f"{icon} {routing.replace('_', ' ')}")
+    st.caption("M.Tech Research Project")
+    st.caption("Mentor: Padmaja Bodanapu")
+    st.caption("GE Vernova Innovation Labs")
 
-st.sidebar.divider()
-st.sidebar.caption("M.Tech Research Project")
-st.sidebar.caption("Mentor: Padmaja Bodanapu, GE Vernova")
 
-# ── Session state ─────────────────────────────────────────────────────────────
-
-defaults = {
+# ── Session defaults ──────────────────────────────────────────────────────────
+for k, v in {
     "verification_state": None,
     "finding_statuses": {},
     "finding_notes": {},
-    "approved": False,
-}
-for k, v in defaults.items():
+}.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# PAGE 1 — UPLOAD AND VERIFY
-# ─────────────────────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
+# PAGE 1 — UPLOAD & VERIFY
+# ═════════════════════════════════════════════════════════════════════════════
 
 def page_upload():
     st.title("Upload Control Narrative Document")
     st.markdown(
-        "Upload a CND as a **PDF** or **plain text** file. "
-        "Three AI agents will check it for **completeness**, **consistency**, and **ambiguity** "
+        "Upload a CND (PDF or TXT). Three AI agents analyse it for "
+        "**completeness**, **consistency**, and **ambiguity** defects "
         "before any PLC code is generated."
     )
 
-    col_upload, col_sample = st.columns(2)
-    with col_upload:
-        st.subheader("Upload your file")
-        uploaded_file = st.file_uploader("Choose a PDF or TXT file", type=["pdf", "txt"])
-
-    with col_sample:
-        st.subheader("Or use a sample document")
-        sample_options = {
-            "— Select —": None,
-            "Pump Station 01 — Clean (no errors)": "data/synthetic_cnds/pump_station_01_clean.txt",
-            "Pump Station 02 — Completeness errors (6 injected)": "data/synthetic_cnds/pump_station_02_completeness_errors.txt",
-            "Pump Station 03 — Consistency errors (4 injected)": "data/synthetic_cnds/pump_station_03_consistency_errors.txt",
-        }
-        selected_sample = st.selectbox("Sample document", list(sample_options.keys()))
+    # ── What each agent checks ────────────────────────────────────────────────
+    st.markdown("### What will be checked")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.markdown("""
+<div class="agent-card ok">
+<h4>Completeness Agent</h4>
+<div class="sub">ISA-88 / ISA-84 / ISA-18.2</div>
+<ul style="font-size:0.82rem;color:#94a3b8;margin-top:8px;padding-left:16px">
+<li>Required sections present</li>
+<li>All interlock fields defined</li>
+<li>All alarm fields defined</li>
+<li>All referenced tags declared</li>
+</ul>
+</div>""", unsafe_allow_html=True)
+    with c2:
+        st.markdown("""
+<div class="agent-card warn">
+<h4>Consistency Agent</h4>
+<div class="sub">Internal cross-check</div>
+<ul style="font-size:0.82rem;color:#94a3b8;margin-top:8px;padding-left:16px">
+<li>Setpoint prose vs. table match</li>
+<li>Equipment type consistent</li>
+<li>Sequence ordering non-contradictory</li>
+<li>Units identical across document</li>
+</ul>
+</div>""", unsafe_allow_html=True)
+    with c3:
+        st.markdown("""
+<div class="agent-card bad">
+<h4>Ambiguity Agent</h4>
+<div class="sub">Programmability check</div>
+<ul style="font-size:0.82rem;color:#94a3b8;margin-top:8px;padding-left:16px">
+<li>No vague quantities ("high")</li>
+<li>No vague timing ("shortly")</li>
+<li>No unresolved references ("it")</li>
+<li>No incomplete conditions</li>
+</ul>
+</div>""", unsafe_allow_html=True)
 
     st.divider()
 
-    # What the agents check
-    with st.expander("What does each agent check?", expanded=False):
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            st.markdown("**Completeness Agent**")
-            st.markdown(
-                "- Required sections present (ISA-88)\n"
-                "- Interlock fields complete (ISA-84)\n"
-                "- Alarm fields complete (ISA-18.2)\n"
-                "- All referenced tags defined"
-            )
-        with c2:
-            st.markdown("**Consistency Agent**")
-            st.markdown(
-                "- Setpoint values match prose vs. table\n"
-                "- Same tag described consistently\n"
-                "- Sequence steps don't contradict\n"
-                "- Units match across document"
-            )
-        with c3:
-            st.markdown("**Ambiguity Agent**")
-            st.markdown(
-                "- No vague quantities (no number)\n"
-                "- No vague timing (no duration)\n"
-                "- No unresolved references ('it')\n"
-                "- No incomplete conditions"
-            )
+    # ── Upload / sample select ────────────────────────────────────────────────
+    col_up, col_sample = st.columns(2)
+    with col_up:
+        st.markdown("### Upload your document")
+        uploaded = st.file_uploader("PDF or TXT", type=["pdf", "txt"], label_visibility="collapsed")
+    with col_sample:
+        st.markdown("### Or use a test document")
+        samples = {
+            "— Select —": None,
+            "Pump Station 01 — Clean (no errors)":
+                "data/synthetic_cnds/pump_station_01_clean.txt",
+            "Pump Station 02 — 6 completeness errors":
+                "data/synthetic_cnds/pump_station_02_completeness_errors.txt",
+            "Pump Station 03 — 4 consistency errors":
+                "data/synthetic_cnds/pump_station_03_consistency_errors.txt",
+        }
+        chosen = st.selectbox("Sample", list(samples.keys()), label_visibility="collapsed")
 
-    run_col, _ = st.columns([1, 3])
-    with run_col:
-        run_button = st.button("Run Verification", type="primary", use_container_width=True)
+    st.divider()
+    run_btn = st.button("▶  Run Verification", type="primary", use_container_width=False)
 
-    if run_button:
-        file_path = _resolve_file_path(uploaded_file, sample_options.get(selected_sample))
-        if not file_path:
+    if run_btn:
+        fp = _resolve(uploaded, samples.get(chosen))
+        if not fp:
             st.warning("Please upload a file or select a sample document.")
             return
 
-        # Run pipeline
-        progress_bar = st.progress(0, text="Starting verification pipeline...")
+        # ── Step progress ─────────────────────────────────────────────────────
+        prog = st.progress(0)
+        status_box = st.empty()
 
-        with st.spinner("Step 1/5 — Parsing document and extracting structure..."):
-            state = prepare_document(file_path)
-        progress_bar.progress(20, text="Step 2/5 — Running Completeness Agent...")
+        def step(n, msg):
+            prog.progress(n)
+            status_box.info(f"**Step {n//20}/5 — {msg}**")
 
-        with st.spinner("Step 2/5 — Running Completeness Agent (checking sections, interlocks, alarms)..."):
-            from src.agents.completeness_agent import run_completeness_agent
-            state = run_completeness_agent(state)
-        progress_bar.progress(40, text="Step 3/5 — Running Consistency Agent...")
+        step(10, "Parsing document and extracting structure...")
+        state = prepare_document(fp)
+        _show_parse_summary(state)
 
-        with st.spinner("Step 3/5 — Running Consistency Agent (checking setpoints, equipment types)..."):
-            from src.agents.consistency_agent import run_consistency_agent
-            state = run_consistency_agent(state)
-        progress_bar.progress(60, text="Step 4/5 — Running Ambiguity Agent...")
+        step(25, "Running Completeness Agent...")
+        from src.agents.completeness_agent import run_completeness_agent
+        state = _run_safe(run_completeness_agent, state, "Completeness Agent")
 
-        with st.spinner("Step 4/5 — Running Ambiguity Agent (detecting vague language)..."):
-            from src.agents.ambiguity_agent import run_ambiguity_agent
-            state = run_ambiguity_agent(state)
-        progress_bar.progress(80, text="Step 5/5 — Computing Verification Quality Score...")
+        step(50, "Running Consistency Agent...")
+        from src.agents.consistency_agent import run_consistency_agent
+        state = _run_safe(run_consistency_agent, state, "Consistency Agent")
 
-        with st.spinner("Step 5/5 — Computing Verification Quality Score..."):
-            from src.scoring.score_engine import run_score_engine
-            state = run_score_engine(state)
-        progress_bar.progress(100, text="Verification complete.")
+        step(75, "Running Ambiguity Agent...")
+        from src.agents.ambiguity_agent import run_ambiguity_agent
+        state = _run_safe(run_ambiguity_agent, state, "Ambiguity Agent")
+
+        step(90, "Computing Verification Quality Score...")
+        state = run_score_engine(state)
+        prog.progress(100)
+        status_box.empty()
 
         st.session_state.verification_state = state
-        st.session_state.finding_statuses = {
-            f["id"]: "OPEN" for f in state.get("all_findings", [])
-        }
+        st.session_state.finding_statuses = {f["id"]: "OPEN" for f in state.get("all_findings", [])}
         st.session_state.finding_notes = {}
-        st.session_state.approved = False
 
-        findings = state.get("all_findings", [])
-        critical = sum(1 for f in findings if f.get("severity") == "CRITICAL")
-        routing = state.get("vqs_scores", {}).get("routing_decision", "")
-
-        if routing == "AUTO_PASS":
-            st.success(f"Verification complete — **AUTO PASS**. {len(findings)} finding(s), none critical.")
-        elif routing == "NEEDS_REVIEW":
-            st.warning(f"Verification complete — **{len(findings)} findings** require engineer review ({critical} critical).")
-        else:
-            st.error(f"Verification complete — **{routing}**. {len(findings)} findings ({critical} critical). Document requires significant revision.")
-
-        st.info("Go to **Score Dashboard** to see the results.")
+        _show_result_banner(state)
 
 
-def _resolve_file_path(uploaded_file, sample_path: str | None) -> str | None:
-    if uploaded_file:
-        temp_path = f"temp_upload_{uploaded_file.name}"
-        with open(temp_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-        return temp_path
+def _resolve(uploaded, sample_path):
+    if uploaded:
+        tmp = f"temp_{uploaded.name}"
+        with open(tmp, "wb") as f:
+            f.write(uploaded.getbuffer())
+        return tmp
     if sample_path and os.path.exists(sample_path):
         return sample_path
     return None
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+def _run_safe(fn, state, name):
+    """Run an agent, show its result immediately, never crash the pipeline."""
+    try:
+        t0 = time.time()
+        state = fn(state)
+        elapsed = time.time() - t0
+
+        # Show what this agent found
+        report_key = name.lower().split()[0] + "_report"
+        report = state.get(report_key, {}) or {}
+        n = len(report.get("findings", []))
+        score = report.get("score", 1.0) * 100
+        critical = report.get("critical_count", 0)
+        high = report.get("high_count", 0)
+
+        if n == 0:
+            st.success(f"✅ **{name}** — No issues found  (score 100%)  [{elapsed:.1f}s]")
+        elif critical > 0:
+            st.error(f"🔴 **{name}** — {n} finding(s): {critical} CRITICAL, {high} HIGH  (score {score:.0f}%)  [{elapsed:.1f}s]")
+        else:
+            st.warning(f"🟡 **{name}** — {n} finding(s): {high} HIGH  (score {score:.0f}%)  [{elapsed:.1f}s]")
+
+    except Exception as e:
+        st.error(f"❌ **{name}** failed: {e}")
+    return state
+
+
+def _show_parse_summary(state):
+    tags = state.get("tag_inventory", [])
+    sections = state.get("sections", {})
+    sp = st.expander(f"Document parsed — {len(tags)} ISA tags found, {len(sections)} sections detected", expanded=False)
+    with sp:
+        col_t, col_s = st.columns(2)
+        with col_t:
+            st.markdown("**ISA Tags found:**")
+            chips = " ".join(f'<span class="tag-chip">{t}</span>' for t in sorted(tags))
+            st.markdown(chips or "*none detected*", unsafe_allow_html=True)
+        with col_s:
+            st.markdown("**Sections detected:**")
+            for sec in list(sections.keys())[:15]:
+                st.markdown(f'<div class="sec-row"><span class="sec-found">✓</span>{sec}</div>',
+                            unsafe_allow_html=True)
+
+
+def _show_result_banner(state):
+    vqs = state.get("vqs_scores", {})
+    findings = state.get("all_findings", [])
+    routing = vqs.get("routing_decision", "")
+    composite = vqs.get("composite", 0) * 100
+    critical = sum(1 for f in findings if f.get("severity") == "CRITICAL")
+    high = sum(1 for f in findings if f.get("severity") == "HIGH")
+
+    if routing == "AUTO_PASS":
+        st.success(f"✅  **AUTO PASS** — Score {composite:.1f}%. {len(findings)} minor finding(s). Proceed to Score Dashboard.")
+    elif routing == "NEEDS_REVIEW":
+        st.warning(f"⚠️  **NEEDS REVIEW** — Score {composite:.1f}%. {len(findings)} finding(s) ({critical} critical, {high} high). Go to Score Dashboard.")
+    elif routing == "MANDATORY_REVISION":
+        missing = state.get("missing_critical_sections", [])
+        detail = f"Missing critical section(s): {', '.join(missing)}" if missing else "Circular interlock detected"
+        st.error(f"🚫  **MANDATORY REVISION** — {detail}. Document blocked from PLC code generation.")
+    else:
+        st.error(f"❌  **FAIL** — Score {composite:.1f}%. {len(findings)} finding(s). Document requires significant revision.")
+
+
+# ═════════════════════════════════════════════════════════════════════════════
 # PAGE 2 — SCORE DASHBOARD
-# ─────────────────────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
 
 def page_dashboard():
-    st.title("Verification Quality Score Dashboard")
+    st.title("Verification Quality Score")
 
     if not st.session_state.verification_state:
-        st.info("No verification results yet. Go to **Upload & Verify** first.")
+        st.info("No results yet. Go to **Upload & Verify** first.")
         return
 
     state = st.session_state.verification_state
     vqs = state.get("vqs_scores", {})
     findings = state.get("all_findings", [])
-
-    composite = vqs.get("composite", 0.0)
     routing = vqs.get("routing_decision", "PENDING")
+    composite = vqs.get("composite", 0)
     routing_info = get_routing_message(routing, composite)
 
-    # ── Score strip ───────────────────────────────────────────────────────────
-    m1, m2, m3, m4, m5 = st.columns(5)
-    with m1:
-        st.metric("Overall VQS", f"{composite*100:.1f}%")
-    with m2:
-        st.metric("Completeness", f"{vqs.get('completeness', 1)*100:.1f}%")
-    with m3:
-        st.metric("Consistency", f"{vqs.get('consistency', 1)*100:.1f}%")
-    with m4:
-        st.metric("Ambiguity", f"{vqs.get('ambiguity', 1)*100:.1f}%")
-    with m5:
-        critical_count = sum(1 for f in findings if f.get("severity") == "CRITICAL")
-        st.metric("Critical Issues", critical_count)
-
-    st.divider()
-
-    # ── Routing decision banner ───────────────────────────────────────────────
+    # ── Routing banner ────────────────────────────────────────────────────────
     color = routing_info["color"]
     msg = f"{routing_info['icon']} **{routing.replace('_', ' ')}** — {routing_info['message']}"
+    missing = state.get("missing_critical_sections", [])
+    if missing:
+        msg += f"  |  Missing critical sections: **{', '.join(missing)}**"
     if color == "green":
         st.success(msg)
     elif color == "orange":
@@ -234,356 +387,383 @@ def page_dashboard():
     else:
         st.error(msg)
 
-    # ── Charts row ────────────────────────────────────────────────────────────
-    chart_col, radar_col = st.columns(2)
-    with chart_col:
-        _gauge_chart(composite * 100, "Overall VQS Score")
-    with radar_col:
-        _radar_chart(vqs)
+    # ── Metric strip ──────────────────────────────────────────────────────────
+    m1, m2, m3, m4, m5 = st.columns(5)
+    _metric_box(m1, f"{composite*100:.1f}%", "Overall VQS Score")
+    _metric_box(m2, f"{vqs.get('completeness',1)*100:.0f}%", "Completeness")
+    _metric_box(m3, f"{vqs.get('consistency',1)*100:.0f}%", "Consistency")
+    _metric_box(m4, f"{vqs.get('ambiguity',1)*100:.0f}%", "Ambiguity")
+    critical = sum(1 for f in findings if f.get("severity") == "CRITICAL")
+    _metric_box(m5, str(critical), "Critical Issues", red=critical > 0)
 
-    # ── Findings breakdown ────────────────────────────────────────────────────
     st.divider()
-    st.subheader(f"Findings Overview — {len(findings)} total")
 
-    if not findings:
-        st.success("No findings — document appears complete, consistent, and unambiguous.")
-        return
+    # ── Charts ────────────────────────────────────────────────────────────────
+    ch1, ch2 = st.columns(2)
+    with ch1:
+        _gauge(composite * 100, "Overall VQS Score")
+    with ch2:
+        _radar(vqs)
 
-    # Group by severity
-    severity_order = {"CRITICAL": 0, "HIGH": 1, "WARNING": 2, "INFO": 3}
-    sorted_findings = sorted(findings, key=lambda f: severity_order.get(f.get("severity", "INFO"), 3))
+    st.divider()
 
-    # Summary counts by agent
-    agents = ["completeness", "consistency", "ambiguity"]
-    agent_counts = {a: sum(1 for f in findings if f.get("agent") == a) for a in agents}
-    sev_counts = {s: sum(1 for f in findings if f.get("severity") == s)
-                  for s in ["CRITICAL", "HIGH", "WARNING", "INFO"]}
+    # ── Agent status cards ────────────────────────────────────────────────────
+    st.markdown("### Agent Results")
+    ag1, ag2, ag3 = st.columns(3)
 
-    tab_overview, tab_by_agent = st.tabs(["By Severity", "By Agent"])
+    comp_report = state.get("completeness_report") or {}
+    cons_report = state.get("consistency_report") or {}
+    amb_report  = state.get("ambiguity_report") or {}
 
-    with tab_overview:
-        for sev, count in sev_counts.items():
-            if count == 0:
-                continue
-            icon = {"CRITICAL": "🔴", "HIGH": "🟠", "WARNING": "🟡", "INFO": "🔵"}[sev]
-            with st.expander(f"{icon} {sev} — {count} finding(s)", expanded=(sev == "CRITICAL")):
-                sev_findings = [f for f in sorted_findings if f.get("severity") == sev]
-                for f in sev_findings:
-                    _compact_finding_card(f)
+    _agent_status_card(ag1, "Completeness Agent", comp_report,
+                       "ISA-88 / ISA-84 / ISA-18.2", "Missing sections, interlock fields, alarm fields")
+    _agent_status_card(ag2, "Consistency Agent", cons_report,
+                       "Internal cross-check", "Setpoint mismatches, type contradictions, sequence errors")
+    _agent_status_card(ag3, "Ambiguity Agent", amb_report,
+                       "Programmability check", "Vague quantities, timing, references, conditions")
 
-    with tab_by_agent:
-        for agent_name in agents:
-            agent_findings = [f for f in sorted_findings if f.get("agent") == agent_name]
-            if not agent_findings:
-                continue
-            with st.expander(f"**{agent_name.title()} Agent** — {len(agent_findings)} finding(s)"):
-                for f in agent_findings:
-                    _compact_finding_card(f)
+    # ── Equipment summary ─────────────────────────────────────────────────────
+    st.divider()
+    st.markdown("### Equipment & Document Summary")
+    eq1, eq2 = st.columns(2)
+
+    tags = state.get("tag_inventory", [])
+    sections = state.get("sections", {})
+    setpoints = state.get("setpoint_table", [])
+    config_sections = _load_required_sections()
+
+    with eq1:
+        st.markdown(f"**ISA Instrument Tags found — {len(tags)} total**")
+        if tags:
+            chips = " ".join(f'<span class="tag-chip">{t}</span>' for t in sorted(tags))
+            st.markdown(chips, unsafe_allow_html=True)
+        else:
+            st.caption("No ISA tags detected (format: XX-NNN)")
+
+        st.markdown(f"<br>**Setpoints table — {len(setpoints)} rows**", unsafe_allow_html=True)
+        if setpoints:
+            for sp in setpoints[:8]:
+                st.caption(f"{sp.get('tag','')} | {sp.get('parameter','')} | {sp.get('value','')} {sp.get('units','')}")
+            if len(setpoints) > 8:
+                st.caption(f"... and {len(setpoints)-8} more")
+
+    with eq2:
+        st.markdown("**Section checklist**")
+        for req in config_sections:
+            found = any(_fuzzy(title, req) for title in sections)
+            icon = '<span class="sec-found">✓</span>' if found else '<span class="sec-miss">✗</span>'
+            st.markdown(
+                f'<div class="sec-row">{icon}{req}</div>',
+                unsafe_allow_html=True,
+            )
+
+    # ── Findings table ────────────────────────────────────────────────────────
+    if findings:
+        st.divider()
+        st.markdown(f"### All Findings — {len(findings)} total")
+        sev_order = {"CRITICAL": 0, "HIGH": 1, "WARNING": 2, "INFO": 3}
+        for f in sorted(findings, key=lambda x: sev_order.get(x.get("severity","INFO"), 3)):
+            _compact_row(f)
 
 
-def _compact_finding_card(f: dict):
-    """Compact card for the dashboard overview."""
+def _metric_box(col, val, label, red=False):
+    color = "#ef4444" if red else "#f1f5f9"
+    with col:
+        st.markdown(
+            f'<div class="metric-box"><div class="val" style="color:{color}">{val}</div>'
+            f'<div class="lbl">{label}</div></div>',
+            unsafe_allow_html=True,
+        )
+
+
+def _agent_status_card(col, name, report, standard, description):
+    with col:
+        if not report:
+            st.markdown(f"""
+<div class="agent-card">
+<h4>{name}</h4>
+<div class="big" style="color:#475569">—</div>
+<div class="sub">Did not run</div>
+</div>""", unsafe_allow_html=True)
+            return
+
+        score = report.get("score", 1.0) * 100
+        n = len(report.get("findings", []))
+        critical = report.get("critical_count", 0)
+        high = report.get("high_count", 0)
+
+        css = "ok" if score >= 85 else ("warn" if score >= 65 else "bad")
+        score_color = "#4ade80" if score >= 85 else ("#fb923c" if score >= 65 else "#f87171")
+        st.markdown(f"""
+<div class="agent-card {css}">
+<h4>{name}</h4>
+<div class="big" style="color:{score_color}">{score:.0f}%</div>
+<div class="sub">{n} finding(s) &nbsp;·&nbsp; {critical} critical &nbsp;·&nbsp; {high} high</div>
+<div class="sub" style="margin-top:6px;color:#475569">{standard}</div>
+<div class="sub" style="color:#334155">{description}</div>
+</div>""", unsafe_allow_html=True)
+
+
+def _compact_row(f):
     sev = f.get("severity", "INFO")
-    icon = {"CRITICAL": "🔴", "HIGH": "🟠", "WARNING": "🟡", "INFO": "🔵"}.get(sev, "⚪")
     pg = f.get("page_number", 0)
-    page_badge = f"**Page {pg}**" if pg else "*page unknown*"
-
+    page_str = f"Page {pg}" if pg else "page ?"
+    agent = f.get("agent", "").title()
+    desc = f.get("description", "")
+    ftype = f.get("finding_type", "")
     st.markdown(
-        f"{icon} {page_badge} &nbsp;·&nbsp; `{f.get('finding_type', '')}` &nbsp;·&nbsp; "
-        f"{f.get('description', '')}"
+        f'<span class="badge badge-{sev}">{sev}</span> &nbsp;'
+        f'<span class="page-badge">{page_str}</span> &nbsp;'
+        f'<span style="color:#64748b;font-size:0.78rem">[{agent}]</span> &nbsp;'
+        f'<code style="font-size:0.75rem">{ftype}</code> &nbsp; {desc}',
+        unsafe_allow_html=True,
     )
     if f.get("quote"):
-        st.caption(f"› {f['quote'][:120]}...")
-    st.markdown("---")
+        st.caption(f"› {f['quote'][:120]}")
+    st.markdown('<hr style="border-color:#1e293b;margin:6px 0">', unsafe_allow_html=True)
 
 
-def _gauge_chart(value: float, title: str):
-    color = "green" if value >= 85 else ("orange" if value >= 65 else "red")
+def _gauge(value, title):
+    color = "#22c55e" if value >= 85 else ("#f59e0b" if value >= 65 else "#ef4444")
     fig = go.Figure(go.Indicator(
         mode="gauge+number",
         value=value,
-        domain={"x": [0, 1], "y": [0, 1]},
-        title={"text": title, "font": {"size": 14}},
-        number={"suffix": "%"},
+        number={"suffix": "%", "font": {"size": 40}},
+        title={"text": title, "font": {"size": 14, "color": "#94a3b8"}},
         gauge={
-            "axis": {"range": [0, 100], "tickwidth": 1},
-            "bar": {"color": color},
+            "axis": {"range": [0, 100], "tickwidth": 1, "tickcolor": "#334155",
+                     "tickfont": {"color": "#94a3b8"}},
+            "bar": {"color": color, "thickness": 0.25},
+            "bgcolor": "#0f172a",
+            "borderwidth": 0,
             "steps": [
-                {"range": [0, 65], "color": "#ffcccc"},
-                {"range": [65, 85], "color": "#fff3cc"},
-                {"range": [85, 100], "color": "#ccffcc"},
+                {"range": [0, 65],   "color": "#1e293b"},
+                {"range": [65, 85],  "color": "#1e293b"},
+                {"range": [85, 100], "color": "#1e293b"},
             ],
+            "threshold": {"line": {"color": color, "width": 3}, "thickness": 0.75, "value": value},
         },
     ))
-    fig.update_layout(height=270, margin=dict(t=40, b=10, l=10, r=10))
-    st.plotly_chart(fig, use_container_width=True)
-
-
-def _radar_chart(vqs: dict):
-    categories = ["Completeness", "Consistency", "Ambiguity"]
-    values = [
-        vqs.get("completeness", 1.0) * 100,
-        vqs.get("consistency", 1.0) * 100,
-        vqs.get("ambiguity", 1.0) * 100,
-    ]
-    v_closed = values + [values[0]]
-    c_closed = categories + [categories[0]]
-
-    fig = go.Figure(go.Scatterpolar(
-        r=v_closed, theta=c_closed, fill="toself",
-        fillcolor="rgba(0, 100, 200, 0.2)",
-        line_color="rgba(0, 100, 200, 0.8)",
-    ))
     fig.update_layout(
-        polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
-        showlegend=False, title="Score by Dimension",
-        height=270, margin=dict(t=50, b=10, l=10, r=10),
+        height=260, paper_bgcolor="#0f172a", plot_bgcolor="#0f172a",
+        font={"color": "#94a3b8"},
+        margin=dict(t=50, b=10, l=30, r=30),
     )
     st.plotly_chart(fig, use_container_width=True)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# PAGE 3 — REVIEW FINDINGS (detailed cards with full evidence)
-# ─────────────────────────────────────────────────────────────────────────────
+def _radar(vqs):
+    cats = ["Completeness", "Consistency", "Ambiguity"]
+    vals = [vqs.get(k, 1.0) * 100 for k in ["completeness", "consistency", "ambiguity"]]
+    v2 = vals + [vals[0]]
+    c2 = cats + [cats[0]]
+    fig = go.Figure(go.Scatterpolar(
+        r=v2, theta=c2, fill="toself",
+        fillcolor="rgba(59,130,246,0.15)",
+        line={"color": "#3b82f6", "width": 2},
+        marker={"size": 6, "color": "#3b82f6"},
+    ))
+    fig.update_layout(
+        polar=dict(
+            radialaxis=dict(visible=True, range=[0, 100], tickfont={"color": "#64748b", "size": 9},
+                            gridcolor="#1e293b", linecolor="#334155"),
+            angularaxis=dict(tickfont={"color": "#94a3b8", "size": 11}, gridcolor="#1e293b"),
+            bgcolor="#0f172a",
+        ),
+        paper_bgcolor="#0f172a",
+        title={"text": "Score by Dimension", "font": {"color": "#94a3b8", "size": 13}},
+        showlegend=False, height=260,
+        margin=dict(t=50, b=10, l=40, r=40),
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
-_SEV_COLOR = {
-    "CRITICAL": "#dc2626",   # red
-    "HIGH":     "#ea580c",   # orange
-    "WARNING":  "#ca8a04",   # amber
-    "INFO":     "#2563eb",   # blue
-}
-_SEV_BG = {
-    "CRITICAL": "#fef2f2",
-    "HIGH":     "#fff7ed",
-    "WARNING":  "#fefce8",
-    "INFO":     "#eff6ff",
-}
 
+# ═════════════════════════════════════════════════════════════════════════════
+# PAGE 3 — REVIEW FINDINGS
+# ═════════════════════════════════════════════════════════════════════════════
+
+_SEV_BORDER = {"CRITICAL": "#ef4444", "HIGH": "#f97316", "WARNING": "#eab308", "INFO": "#3b82f6"}
 
 def page_review():
     st.title("Review Findings")
-    st.markdown(
-        "Each card shows the exact location, the standard violated, "
-        "why it matters for PLC coding, and a specific suggested fix. "
-        "Mark each finding **Accepted** or **Rejected** before approving the document."
-    )
 
     if not st.session_state.verification_state:
-        st.info("No verification results yet. Go to **Upload & Verify** first.")
+        st.info("No results yet. Go to **Upload & Verify** first.")
         return
 
     state = st.session_state.verification_state
     findings = state.get("all_findings", [])
 
     if not findings:
-        st.success("No findings — document passed all checks. You can proceed with PLC code generation.")
-        _show_approve_button(state)
+        st.success("No findings — document passed all checks.")
+        _approve_gate(state)
         return
 
-    severity_order = {"CRITICAL": 0, "HIGH": 1, "WARNING": 2, "INFO": 3}
-    sorted_findings = sorted(findings, key=lambda f: severity_order.get(f.get("severity", "INFO"), 3))
+    sev_order = {"CRITICAL": 0, "HIGH": 1, "WARNING": 2, "INFO": 3}
+    sorted_f = sorted(findings, key=lambda f: sev_order.get(f.get("severity", "INFO"), 3))
 
-    # Progress bar
-    total = len(sorted_findings)
-    actioned = sum(
-        1 for f in sorted_findings
-        if st.session_state.finding_statuses.get(f.get("id"), "OPEN") != "OPEN"
+    # ── Progress ──────────────────────────────────────────────────────────────
+    total = len(sorted_f)
+    done = sum(1 for f in sorted_f
+               if st.session_state.finding_statuses.get(f.get("id"), "OPEN") != "OPEN")
+    critical_open = [f for f in sorted_f
+                     if f.get("severity") == "CRITICAL"
+                     and st.session_state.finding_statuses.get(f.get("id"), "OPEN") == "OPEN"]
+
+    st.progress(done / total if total else 1.0,
+                text=f"{done} of {total} findings reviewed  ·  {len(critical_open)} critical still open")
+
+    # ── Filters ───────────────────────────────────────────────────────────────
+    fc1, fc2, fc3 = st.columns(3)
+    f_sev   = fc1.multiselect("Severity", ["CRITICAL","HIGH","WARNING","INFO"],
+                               default=["CRITICAL","HIGH","WARNING","INFO"])
+    f_agent = fc2.multiselect("Agent", ["completeness","consistency","ambiguity"],
+                               default=["completeness","consistency","ambiguity"])
+    f_stat  = fc3.multiselect("Status", ["OPEN","ACCEPTED","REJECTED"],
+                               default=["OPEN","ACCEPTED","REJECTED"])
+
+    visible = [f for f in sorted_f
+               if f.get("severity") in f_sev
+               and f.get("agent") in f_agent
+               and st.session_state.finding_statuses.get(f.get("id"), "OPEN") in f_stat]
+
+    st.caption(f"Showing {len(visible)} of {total} findings")
+    st.divider()
+
+    for f in visible:
+        _finding_card(f)
+
+    st.divider()
+    _approve_gate(state, critical_open)
+
+
+def _finding_card(f: dict):
+    fid   = f.get("id", "")
+    sev   = f.get("severity", "INFO")
+    pg    = f.get("page_number", 0)
+    cur   = st.session_state.finding_statuses.get(fid, "OPEN")
+    border = _SEV_BORDER.get(sev, "#64748b")
+    status_icons = {"OPEN": "⬜", "ACCEPTED": "✅", "REJECTED": "❌"}
+
+    header = (
+        f'{status_icons.get(cur,"⬜")} '
+        f'<span class="badge badge-{sev}">{sev}</span> &nbsp; '
+        f'{"📄 Page " + str(pg) if pg else "📄 page ?"} &nbsp;·&nbsp; '
+        f'{f.get("description","")[:80]}'
     )
-    critical_open = [
-        f for f in sorted_findings
-        if f.get("severity") == "CRITICAL"
-        and st.session_state.finding_statuses.get(f.get("id"), "OPEN") == "OPEN"
-    ]
+    with st.expander(f"{status_icons.get(cur,'⬜')} [{sev}]  {f.get('description','')[:80]}",
+                     expanded=(sev == "CRITICAL" and cur == "OPEN")):
 
-    st.progress(actioned / total, text=f"{actioned} of {total} findings reviewed")
-    if critical_open:
-        st.warning(f"{len(critical_open)} critical finding(s) still unreviewed — required before approval")
-    st.divider()
-
-    # Filter controls
-    filter_col1, filter_col2, filter_col3 = st.columns(3)
-    with filter_col1:
-        filter_sev = st.multiselect(
-            "Filter by severity", ["CRITICAL", "HIGH", "WARNING", "INFO"],
-            default=["CRITICAL", "HIGH", "WARNING", "INFO"]
-        )
-    with filter_col2:
-        filter_agent = st.multiselect(
-            "Filter by agent", ["completeness", "consistency", "ambiguity"],
-            default=["completeness", "consistency", "ambiguity"]
-        )
-    with filter_col3:
-        filter_status = st.multiselect(
-            "Filter by status", ["OPEN", "ACCEPTED", "REJECTED"],
-            default=["OPEN", "ACCEPTED", "REJECTED"]
-        )
-
-    visible_findings = [
-        f for f in sorted_findings
-        if f.get("severity") in filter_sev
-        and f.get("agent") in filter_agent
-        and st.session_state.finding_statuses.get(f.get("id"), "OPEN") in filter_status
-    ]
-
-    st.caption(f"Showing {len(visible_findings)} of {total} findings")
-    st.divider()
-
-    for f in visible_findings:
-        _render_finding_card(f)
-
-    st.divider()
-    _show_approve_button(state, critical_open=critical_open)
-
-
-def _render_finding_card(f: dict):
-    fid = f.get("id", "")
-    sev = f.get("severity", "INFO")
-    current_status = st.session_state.finding_statuses.get(fid, "OPEN")
-
-    sev_color = _SEV_COLOR.get(sev, "#6b7280")
-    status_icon = {"OPEN": "⬜", "ACCEPTED": "✅", "REJECTED": "❌"}.get(current_status, "⬜")
-    page_num = f.get("page_number", 0)
-    page_display = f"Page {page_num}" if page_num else "Page unknown"
-
-    # Card header label
-    short_desc = f.get("description", "")
-    if len(short_desc) > 90:
-        short_desc = short_desc[:87] + "..."
-
-    header = f"{status_icon} [{sev}] {short_desc}"
-
-    with st.expander(header, expanded=(sev == "CRITICAL" and current_status == "OPEN")):
-
-        # ── Location strip ────────────────────────────────────────────────────
-        loc_col, agent_col, type_col = st.columns([1, 1, 2])
-        with loc_col:
+        # Location strip
+        loc1, loc2, loc3 = st.columns([1, 1, 2])
+        with loc1:
+            pg_color = border
             st.markdown(
-                f"<div style='background:{sev_color};color:white;padding:6px 12px;"
-                f"border-radius:6px;font-weight:bold;font-size:1.1em;display:inline-block'>"
-                f"📄 {page_display}</div>",
+                f'<div style="background:{pg_color};color:#fff;padding:8px 14px;'
+                f'border-radius:8px;font-weight:700;font-size:1rem;display:inline-block">'
+                f'📄 {"Page " + str(pg) if pg else "Page unknown"}</div>',
                 unsafe_allow_html=True,
             )
-        with agent_col:
-            st.markdown(f"**Agent:** {f.get('agent', '').title()}")
-        with type_col:
-            st.markdown(f"**Type:** `{f.get('finding_type', '')}`")
+        with loc2:
+            st.markdown(f"**Agent:** {f.get('agent','').title()}")
             if f.get("section_title"):
                 st.markdown(f"**Section:** {f.get('section_title')}")
+        with loc3:
+            st.markdown(f"**Type:** `{f.get('finding_type','')}`")
+            st.markdown(f"**Source:** {f.get('evidence_source','—')}")
 
-        st.markdown("")
+        st.markdown("---")
 
-        # ── WHAT is wrong ─────────────────────────────────────────────────────
-        st.markdown("#### What is the problem?")
-        st.markdown(f.get("description", "No description available."))
+        # What is wrong
+        st.markdown("#### 🔎 What is the problem?")
+        st.markdown(f.get("description", "—"))
 
-        # ── EVIDENCE — exact quote from document ─────────────────────────────
+        # Evidence
         if f.get("quote"):
-            st.markdown("#### Evidence — exact text from document")
+            st.markdown("#### 📋 Exact text from document")
             st.code(f.get("quote"), language=None)
 
-        # ── BASIS — rule violated ─────────────────────────────────────────────
-        if f.get("rule_violated") or f.get("rule_text"):
-            st.markdown("#### What rule does this violate?")
-            if f.get("rule_violated"):
-                st.markdown(f"**{f['rule_violated']}**")
-            if f.get("rule_text"):
-                st.info(f.get("rule_text"))
+        # Two-column: rule + why
+        r1, r2 = st.columns(2)
+        with r1:
+            if f.get("rule_violated") or f.get("rule_text"):
+                st.markdown("#### 📖 Rule violated")
+                if f.get("rule_violated"):
+                    st.markdown(f"**{f['rule_violated']}**")
+                if f.get("rule_text"):
+                    st.info(f.get("rule_text"))
+        with r2:
+            if f.get("why_it_matters"):
+                st.markdown("#### ⚠️ Why it matters for PLC coding")
+                st.warning(f.get("why_it_matters"))
 
-        # ── WHY IT MATTERS ────────────────────────────────────────────────────
-        if f.get("why_it_matters"):
-            st.markdown("#### Why does this matter for PLC programming?")
-            st.warning(f.get("why_it_matters"))
-
-        # ── HOW TO FIX ────────────────────────────────────────────────────────
-        st.markdown("#### Suggested fix")
+        # Fix
+        st.markdown("#### ✅ Suggested fix")
         st.success(f.get("suggestion", "No suggestion available."))
 
-        if f.get("evidence_source"):
-            st.caption(f"Source: {f.get('evidence_source')}")
-
-        # ── Engineer decision ─────────────────────────────────────────────────
+        # Decision
         st.markdown("---")
-        dec_col1, dec_col2 = st.columns([1, 2])
-        with dec_col1:
-            st.markdown("**Engineer Decision:**")
+        d1, d2 = st.columns([1, 2])
+        with d1:
             new_status = st.radio(
-                f"Decision for {fid}",
+                "Engineer decision",
                 ["OPEN", "ACCEPTED", "REJECTED"],
-                index=["OPEN", "ACCEPTED", "REJECTED"].index(current_status),
-                key=f"radio_{fid}",
-                label_visibility="collapsed",
+                index=["OPEN","ACCEPTED","REJECTED"].index(cur),
+                key=f"r_{fid}",
                 horizontal=True,
             )
             st.session_state.finding_statuses[fid] = new_status
-        with dec_col2:
+        with d2:
             note = st.text_input(
-                "Optional note (reason for decision)",
+                "Note (optional)",
                 value=st.session_state.finding_notes.get(fid, ""),
-                key=f"note_{fid}",
-                placeholder="e.g. 'Confirmed with P&ID revision 3' or 'Not applicable — test CND'",
-                label_visibility="visible",
+                key=f"n_{fid}",
+                placeholder="e.g. Confirmed with P&ID rev 3 / not applicable for test document",
             )
             st.session_state.finding_notes[fid] = note
 
 
-def _show_approve_button(state: dict, critical_open: list = None):
+def _approve_gate(state, critical_open=None):
     if critical_open is None:
         critical_open = []
 
-    vqs = state.get("vqs_scores", {})
-    routing = vqs.get("routing_decision", "PENDING")
-
-    st.subheader("Approval Gate")
+    routing = state.get("vqs_scores", {}).get("routing_decision", "")
+    st.markdown("### Approval Gate")
 
     if routing == "MANDATORY_REVISION":
-        st.error(
-            "Cannot approve — document has a **MANDATORY REVISION** flag. "
-            "This is caused by: circular interlocks or missing critical sections (Interlocks, Alarms, ESD). "
-            "These must be corrected in the source document before re-verification."
-        )
+        missing = state.get("missing_critical_sections", [])
+        detail = f"Missing: {', '.join(missing)}" if missing else "Circular interlock detected"
+        st.error(f"🚫 Cannot approve — **MANDATORY REVISION** ({detail}). Fix in source document and re-upload.")
         return
 
     if critical_open:
-        st.error(
-            f"Cannot approve — **{len(critical_open)} CRITICAL finding(s)** are still marked OPEN. "
-            "Review each critical finding above and mark it as ACCEPTED or REJECTED."
-        )
-        st.markdown("Outstanding critical findings:")
-        for f in critical_open:
-            pg = f.get("page_number", 0)
-            st.markdown(f"- `{f.get('id')}` — Page {pg} — {f.get('description', '')[:80]}")
+        st.error(f"🔴 Cannot approve — **{len(critical_open)} critical finding(s)** still OPEN. "
+                 "Review all critical findings above first.")
         return
 
-    st.success("All critical findings reviewed. Document is ready for approval.")
+    st.success("All critical findings reviewed. Document ready for approval.")
     st.markdown(
-        "By clicking **Approve**, you confirm that:\n"
-        "- You have reviewed all flagged findings\n"
-        "- You accept responsibility for any rejected findings\n"
-        "- The document is suitable for PLC code generation"
+        "By approving you confirm: findings reviewed, rejected items accepted as risk, "
+        "document is suitable for PLC code generation."
     )
-
-    if st.button("Approve Document — Save Report", type="primary"):
-        _save_approval_report(state)
-        st.session_state.approved = True
-        st.success(
-            "Document approved. Report saved to `output/verification_report.json`. "
-            "PLC code generation can now proceed."
-        )
+    if st.button("✅  Approve — Save Verification Report", type="primary"):
+        _save_report(state)
+        st.success("Report saved to `output/verification_report.json`. PLC code generation may proceed.")
         st.balloons()
 
 
-def _save_approval_report(state: dict):
+def _save_report(state):
     os.makedirs("output", exist_ok=True)
     report = {
         "document_path": state.get("document_path", ""),
         "vqs_scores": state.get("vqs_scores", {}),
-        "routing_decision": state.get("vqs_scores", {}).get("routing_decision", ""),
+        "tag_inventory": state.get("tag_inventory", []),
         "total_findings": len(state.get("all_findings", [])),
-        "findings_with_status": [
+        "findings": [
             {
                 **f,
-                "engineer_status": st.session_state.finding_statuses.get(f.get("id", ""), "OPEN"),
-                "engineer_note": st.session_state.finding_notes.get(f.get("id", ""), ""),
+                "engineer_status": st.session_state.finding_statuses.get(f.get("id",""), "OPEN"),
+                "engineer_note":   st.session_state.finding_notes.get(f.get("id",""), ""),
             }
             for f in state.get("all_findings", [])
         ],
@@ -593,9 +773,27 @@ def _save_approval_report(state: dict):
         json.dump(report, fp, indent=2)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Router
-# ─────────────────────────────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _load_required_sections() -> list:
+    try:
+        import yaml
+        with open("config.yaml") as f:
+            cfg = yaml.safe_load(f)
+        return cfg.get("required_sections", [])
+    except Exception:
+        return ["General Description", "Operating Modes", "Startup Sequence",
+                "Shutdown Sequence", "Emergency Shutdown", "Interlocks", "Alarms", "Setpoints"]
+
+
+def _fuzzy(a: str, b: str, threshold: float = 0.60) -> bool:
+    from difflib import SequenceMatcher
+    if b.lower() in a.lower():
+        return True
+    return SequenceMatcher(None, a.lower(), b.lower()).ratio() >= threshold
+
+
+# ── Router ────────────────────────────────────────────────────────────────────
 
 if page == "Upload & Verify":
     page_upload()

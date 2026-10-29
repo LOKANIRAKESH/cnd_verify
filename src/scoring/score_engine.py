@@ -64,12 +64,17 @@ def collect_all_findings(state: VerificationState) -> list[dict]:
 def deduplicate_findings(findings: list[dict]) -> list[dict]:
     """
     Remove near-duplicate findings from different agents.
-    Two findings are duplicates if they reference the same quote and same finding_type.
+    Key includes agent + finding_type + first 60 chars of description
+    so that two MISSING_SECTION findings for different sections are NOT collapsed.
     """
     seen = set()
     unique = []
     for f in findings:
-        key = (f.get("finding_type", ""), f.get("quote", "")[:80])
+        key = (
+            f.get("agent", ""),
+            f.get("finding_type", ""),
+            f.get("description", "")[:60],
+        )
         if key not in seen:
             seen.add(key)
             unique.append(f)
