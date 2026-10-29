@@ -23,6 +23,8 @@ from pathlib import Path
 
 logger = logging.getLogger("cnd_verify")
 
+ISA_TAG_RE = re.compile(r"\b([A-Z]{1,3}-[0-9]{1,4}[A-Z]?)\b")
+
 # Tag prefix → equipment class (fallback when definition_map is empty)
 PREFIX_CLASS = {
     "P":  "PUMP",
