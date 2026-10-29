@@ -5,7 +5,8 @@ Three pages: Upload & Verify | Score Dashboard | Review Findings
 
 import streamlit as st
 import plotly.graph_objects as go
-import json, os, sys, time, requests
+import json, os, sys, re, time, requests
+import fitz  # PyMuPDF — for PDF rendering + highlighting
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -30,6 +31,61 @@ def _check_ollama() -> tuple[bool, str]:
     except Exception:
         pass
     return False, "Ollama NOT running — LLM checks disabled"
+
+# ── PDF page rendering with highlight ────────────────────────────────────────
+
+# Highlight colour (RGB 0–1) per severity
+_SEV_HIGHLIGHT = {
+    "CRITICAL": (1.0, 0.28, 0.28),   # red
+    "HIGH":     (1.0, 0.60, 0.10),   # orange
+    "WARNING":  (1.0, 0.93, 0.10),   # yellow
+    "INFO":     (0.40, 0.70, 1.00),  # blue
+}
+
+
+def _render_pdf_page(pdf_path: str, page_num: int, search_text: str, severity: str) -> bytes | None:
+    """
+    Open pdf_path, jump to page_num (1-indexed), highlight search_text,
+    and return the page as PNG bytes at 1.8× zoom.
+    Returns None if the file is not a PDF or can't be opened.
+    """
+    if not pdf_path or not os.path.isfile(pdf_path):
+        return None
+    if not pdf_path.lower().endswith(".pdf"):
+        return None
+    try:
+        doc = fitz.open(pdf_path)
+        idx = max(0, min(page_num - 1, len(doc) - 1))
+        page = doc[idx]
+
+        hl_color = _SEV_HIGHLIGHT.get(severity, (1.0, 0.93, 0.10))
+
+        # Try progressively shorter substrings of the quote to find text on the page
+        if search_text:
+            # Strip artefacts that come from multi-section quotes (↔, [Page N])
+            clean = re.sub(r"\[Page \d+\]|↔|→|←|\[.*?\]", "", search_text)
+            clean = re.sub(r"\s+", " ", clean).strip()
+            candidates = [clean[:80], clean[:50], clean[:30], clean[:15]]
+            for candidate in candidates:
+                candidate = candidate.strip()
+                if len(candidate) < 5:
+                    continue
+                rects = page.search_for(candidate, quads=False)
+                if rects:
+                    for rect in rects:
+                        annot = page.add_highlight_annot(rect)
+                        annot.set_colors(stroke=hl_color)
+                        annot.update()
+                    break   # stop at first hit
+
+        # Render at 1.8× — high enough to read comfortably
+        pix = page.get_pixmap(matrix=fitz.Matrix(1.8, 1.8), alpha=False)
+        png_bytes = pix.tobytes("png")
+        doc.close()
+        return png_bytes
+    except Exception:
+        return None
+
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -159,6 +215,7 @@ for k, v in {
     "verification_state": None,
     "finding_statuses": {},
     "finding_notes": {},
+    "pdf_views_open": set(),   # set of finding IDs currently showing PDF view
 }.items():
     if k not in st.session_state:
         st.session_state[k] = v
@@ -675,28 +732,22 @@ def page_review():
 
 
 def _finding_card(f: dict):
-    fid   = f.get("id", "")
-    sev   = f.get("severity", "INFO")
-    pg    = f.get("page_number", 0)
-    cur   = st.session_state.finding_statuses.get(fid, "OPEN")
+    fid    = f.get("id", "")
+    sev    = f.get("severity", "INFO")
+    pg     = f.get("page_number", 0)
+    cur    = st.session_state.finding_statuses.get(fid, "OPEN")
     border = _SEV_BORDER.get(sev, "#64748b")
     status_icons = {"OPEN": "⬜", "ACCEPTED": "✅", "REJECTED": "❌"}
 
-    header = (
-        f'{status_icons.get(cur,"⬜")} '
-        f'<span class="badge badge-{sev}">{sev}</span> &nbsp; '
-        f'{"📄 Page " + str(pg) if pg else "📄 page ?"} &nbsp;·&nbsp; '
-        f'{f.get("description","")[:80]}'
-    )
-    with st.expander(f"{status_icons.get(cur,'⬜')} [{sev}]  {f.get('description','')[:80]}",
-                     expanded=(sev == "CRITICAL" and cur == "OPEN")):
-
-        # Location strip
+    with st.expander(
+        f"{status_icons.get(cur,'⬜')} [{sev}]  {f.get('description','')[:80]}",
+        expanded=(sev == "CRITICAL" and cur == "OPEN"),
+    ):
+        # ── Location strip ────────────────────────────────────────────────────
         loc1, loc2, loc3 = st.columns([1, 1, 2])
         with loc1:
-            pg_color = border
             st.markdown(
-                f'<div style="background:{pg_color};color:#fff;padding:8px 14px;'
+                f'<div style="background:{border};color:#fff;padding:8px 14px;'
                 f'border-radius:8px;font-weight:700;font-size:1rem;display:inline-block">'
                 f'📄 {"Page " + str(pg) if pg else "Page unknown"}</div>',
                 unsafe_allow_html=True,
@@ -711,16 +762,16 @@ def _finding_card(f: dict):
 
         st.markdown("---")
 
-        # What is wrong
+        # ── What is wrong ─────────────────────────────────────────────────────
         st.markdown("#### 🔎 What is the problem?")
         st.markdown(f.get("description", "—"))
 
-        # Evidence
+        # ── Evidence ──────────────────────────────────────────────────────────
         if f.get("quote"):
             st.markdown("#### 📋 Exact text from document")
             st.code(f.get("quote"), language=None)
 
-        # Two-column: rule + why
+        # ── Rule + Why ────────────────────────────────────────────────────────
         r1, r2 = st.columns(2)
         with r1:
             if f.get("rule_violated") or f.get("rule_text"):
@@ -734,18 +785,40 @@ def _finding_card(f: dict):
                 st.markdown("#### ⚠️ Why it matters for PLC coding")
                 st.warning(f.get("why_it_matters"))
 
-        # Fix
+        # ── Fix ───────────────────────────────────────────────────────────────
         st.markdown("#### ✅ Suggested fix")
         st.success(f.get("suggestion", "No suggestion available."))
 
-        # Decision
+        # ── PDF Viewer ────────────────────────────────────────────────────────
+        pdf_path = (st.session_state.verification_state or {}).get("document_path", "")
+        is_pdf = bool(pdf_path and pdf_path.lower().endswith(".pdf") and os.path.isfile(pdf_path))
+
+        if is_pdf and pg:
+            st.markdown("---")
+            # Toggle button
+            view_open = fid in st.session_state.pdf_views_open
+            btn_label = "🔒 Close document view" if view_open else "📄 Open in document"
+            if st.button(btn_label, key=f"pdfbtn_{fid}"):
+                if view_open:
+                    st.session_state.pdf_views_open.discard(fid)
+                else:
+                    st.session_state.pdf_views_open.add(fid)
+                st.rerun()
+
+            if fid in st.session_state.pdf_views_open:
+                _pdf_viewer_panel(f, pdf_path, pg, sev, border)
+
+        elif not is_pdf and pdf_path:
+            st.caption("📄 PDF preview not available for plain-text documents.")
+
+        # ── Engineer decision ─────────────────────────────────────────────────
         st.markdown("---")
         d1, d2 = st.columns([1, 2])
         with d1:
             new_status = st.radio(
                 "Engineer decision",
                 ["OPEN", "ACCEPTED", "REJECTED"],
-                index=["OPEN","ACCEPTED","REJECTED"].index(cur),
+                index=["OPEN", "ACCEPTED", "REJECTED"].index(cur),
                 key=f"r_{fid}",
                 horizontal=True,
             )
@@ -758,6 +831,78 @@ def _finding_card(f: dict):
                 placeholder="e.g. Confirmed with P&ID rev 3 / not applicable for test document",
             )
             st.session_state.finding_notes[fid] = note
+
+
+def _pdf_viewer_panel(f: dict, pdf_path: str, page_num: int, severity: str, border_color: str):
+    """Renders the PDF page with highlights and navigation controls."""
+    st.markdown(
+        f'<div style="background:#0f172a;border:1px solid {border_color};border-radius:10px;'
+        f'padding:14px 18px;margin:10px 0">'
+        f'<span style="color:{border_color};font-weight:700;font-size:0.9rem">'
+        f'📄 DOCUMENT VIEW — Page {page_num}</span>'
+        f'<span style="color:#64748b;font-size:0.78rem;margin-left:16px">'
+        f'Highlighted text: error location</span></div>',
+        unsafe_allow_html=True,
+    )
+
+    # Page navigation
+    fid = f.get("id", "")
+    nav1, nav2, nav3 = st.columns([1, 2, 1])
+    with nav1:
+        if st.button("◀ Prev page", key=f"prev_{fid}"):
+            key = f"viewer_page_{fid}"
+            st.session_state[key] = max(1, st.session_state.get(key, page_num) - 1)
+    with nav3:
+        if st.button("Next page ▶", key=f"next_{fid}"):
+            key = f"viewer_page_{fid}"
+            st.session_state[key] = st.session_state.get(key, page_num) + 1
+    with nav2:
+        view_page = st.session_state.get(f"viewer_page_{fid}", page_num)
+        st.markdown(
+            f'<div style="text-align:center;color:#94a3b8;font-size:0.85rem;padding:4px 0">'
+            f'Viewing page {view_page}  ·  Error on page {page_num}</div>',
+            unsafe_allow_html=True,
+        )
+
+    # Determine what to highlight:
+    # - On the error page: highlight the quote text
+    # - On other pages: no highlight, just show for context
+    quote = f.get("quote", "")
+    highlight_text = quote if view_page == page_num else ""
+
+    with st.spinner("Rendering page..."):
+        png_bytes = _render_pdf_page(pdf_path, view_page, highlight_text, severity)
+
+    if png_bytes:
+        # Severity-coloured caption
+        sev_labels = {
+            "CRITICAL": ("🔴", "Red highlight = CRITICAL error location"),
+            "HIGH":     ("🟠", "Orange highlight = HIGH severity error"),
+            "WARNING":  ("🟡", "Yellow highlight = WARNING"),
+            "INFO":     ("🔵", "Blue highlight = INFO"),
+        }
+        icon, cap = sev_labels.get(severity, ("🟡", "Highlighted text"))
+        st.image(
+            png_bytes,
+            caption=f"{icon} Page {view_page}  ·  {cap}" if view_page == page_num
+                    else f"Page {view_page} (context — error is on page {page_num})",
+            use_container_width=True,
+        )
+
+        # Show quote below image for reference
+        if quote and view_page == page_num:
+            st.markdown(
+                f'<div style="background:#1e293b;border-left:3px solid {border_color};'
+                f'padding:8px 14px;border-radius:0 6px 6px 0;margin-top:6px;'
+                f'font-family:monospace;font-size:0.8rem;color:#cbd5e1">'
+                f'<b style="color:{border_color}">Searched text:</b> {quote[:200]}</div>',
+                unsafe_allow_html=True,
+            )
+    else:
+        st.warning(
+            f"Could not render page {view_page}. "
+            f"The document may have been moved or is not a valid PDF."
+        )
 
 
 def _approve_gate(state, critical_open=None):

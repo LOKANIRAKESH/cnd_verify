@@ -133,7 +133,7 @@ class PIDSchematic(Flowable):
         self.show_standby = show_standby
 
     def draw(self):
-        c = self._canvas
+        c = self.canv
         c.saveState()
 
         BLUE  = colors.HexColor("#1e3a5f")
@@ -1046,7 +1046,7 @@ def main():
     )
 
     print("\nDone. PDFs saved to data/synthetic_cnds/")
-    print("Test in the app: Upload & Verify → upload one of these PDFs")
+    print("Test in the app: Upload & Verify -> upload one of these PDFs")
 
 
 if __name__ == "__main__":
