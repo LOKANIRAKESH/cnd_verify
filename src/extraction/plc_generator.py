@@ -19,6 +19,7 @@ CODESYS, TIA Portal, Studio 5000, and most modern PLCs.
 import re
 import logging
 from datetime import datetime
+from pathlib import Path
 
 logger = logging.getLogger("cnd_verify")
 
