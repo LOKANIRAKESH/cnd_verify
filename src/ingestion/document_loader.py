@@ -322,11 +322,24 @@ def prepare_document(file_path: str) -> dict:
         "sections_pages": sections_pages,
         "tag_inventory": tags,
         "setpoint_table": setpoints,
+        # Pass 1 fields — filled by build_document_index in graph
+        "doc_collection_name": "",
+        "tag_index": {},
+        "setpoint_index": {},
+        "definition_map": {},
+        "chunk_groups": [],
+        # Agent reports
         "completeness_report": None,
         "consistency_report": None,
         "ambiguity_report": None,
+        "image_report": None,
+        "image_summary": [],
         "all_findings": [],
         "vqs_scores": None,
+        # PLC generation
+        "plc_code": {},
+        "plc_summary": {},
+        # Hard fail flags
         "has_circular_interlock": False,
         "missing_critical_sections": [],
         "error": None,

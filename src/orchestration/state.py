@@ -83,16 +83,31 @@ class VerificationState(TypedDict):
     tag_inventory: list[str]        # All ISA tags found (e.g., ["PT-101", "XV-201"])
     setpoint_table: list[dict]      # [{tag, parameter, value, units, page}]
 
+    # ── Pass 1: Global Knowledge Store (built by document_indexer) ────────────
+    doc_collection_name: str        # ChromaDB collection name for this document
+    tag_index: dict                 # {tag: [{page, section, text}]} — all mentions
+    setpoint_index: dict            # {tag: {param: {value, unit, page}}}
+    definition_map: dict            # {tag: {type, class, description, page}}
+    chunk_groups: list              # [{group_id, section_titles, combined_text, pages}]
+
     # Agent outputs — each agent appends its report here
     completeness_report: Optional[dict]   # AgentReport serialised to dict
     consistency_report: Optional[dict]
     ambiguity_report: Optional[dict]
+    image_report: Optional[dict]    # NEW — image cross-validation agent
+
+    # Image metadata for UI display
+    image_summary: list             # [{page, class, width, height, tags_found, thumbnail}]
 
     # Combined findings (populated by score_engine after all agents complete)
     all_findings: list[dict]
 
     # Scoring
     vqs_scores: Optional[dict]     # VQSScores serialised to dict
+
+    # ── PLC Code Generation (built after verification) ────────────────────────
+    plc_code: dict                  # {tag: {code, equipment_class, page, clean}}
+    plc_summary: dict               # {clean_count, dirty_count, skipped_tags, ...}
 
     # Hard fail flags
     has_circular_interlock: bool

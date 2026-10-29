@@ -1,6 +1,6 @@
 """
 src/ui/app.py  —  CND-Verify professional dashboard
-Three pages: Upload & Verify | Score Dashboard | Review Findings
+Four pages: Upload & Verify | Score Dashboard | Review Findings | PLC Code
 """
 
 import streamlit as st
@@ -12,6 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.ingestion.document_loader import prepare_document
+from src.ingestion.document_indexer import build_document_index
 from src.scoring.score_engine import run_score_engine, get_routing_message
 
 
@@ -183,7 +184,7 @@ with st.sidebar:
     st.markdown("## 🔍 CND-Verify")
     st.markdown("*Control Narrative Pre-Verification*")
     st.divider()
-    page = st.radio("Navigation", ["Upload & Verify", "Score Dashboard", "Review Findings"])
+    page = st.radio("Navigation", ["Upload & Verify", "Score Dashboard", "Review Findings", "PLC Code"])
     st.divider()
 
     # Ollama health check
@@ -306,28 +307,56 @@ def page_upload():
         prog = st.progress(0)
         status_box = st.empty()
 
-        def step(n, msg):
+        def step(n, total, msg):
             prog.progress(n)
-            status_box.info(f"**Step {n//20}/5 — {msg}**")
+            status_box.info(f"**Step {n}//{total} — {msg}**")
 
-        step(10, "Parsing document and extracting structure...")
+        step(5, 100, "Parsing document and extracting structure...")
         state = prepare_document(fp)
         _show_parse_summary(state)
 
-        step(25, "Running Completeness Agent...")
+        step(12, 100, "Pass 1 — building global knowledge index (cross-chunk context)...")
+        try:
+            import yaml
+            with open("config.yaml") as cf:
+                cfg = yaml.safe_load(cf)
+            state = build_document_index(state, cfg)
+            st.caption(
+                f"📚 Index built — {len(state.get('tag_index', {}))} tags indexed, "
+                f"{len(state.get('chunk_groups', []))} section groups"
+            )
+        except Exception as e:
+            st.warning(f"Index build warning (non-fatal): {e}")
+
+        step(22, 100, "Image Agent — extracting and classifying embedded images...")
+        from src.agents.image_agent import run_image_agent
+        state = _run_safe(run_image_agent, state, "Image Agent")
+
+        step(38, 100, "Completeness Agent — checking required sections and fields...")
         from src.agents.completeness_agent import run_completeness_agent
         state = _run_safe(run_completeness_agent, state, "Completeness Agent")
 
-        step(50, "Running Consistency Agent...")
+        step(55, 100, "Consistency Agent — detecting contradictions and setpoint mismatches...")
         from src.agents.consistency_agent import run_consistency_agent
         state = _run_safe(run_consistency_agent, state, "Consistency Agent")
 
-        step(75, "Running Ambiguity Agent...")
+        step(72, 100, "Ambiguity Agent — detecting vague language...")
         from src.agents.ambiguity_agent import run_ambiguity_agent
         state = _run_safe(run_ambiguity_agent, state, "Ambiguity Agent")
 
-        step(90, "Computing Verification Quality Score...")
+        step(85, 100, "Computing Verification Quality Score...")
         state = run_score_engine(state)
+
+        step(93, 100, "Generating PLC code for verified equipment...")
+        from src.extraction.plc_generator import run_plc_generator
+        state = run_plc_generator(state)
+        plc_sum = state.get("plc_summary", {})
+        if plc_sum.get("clean_count", 0) > 0:
+            st.caption(
+                f"⚙️ PLC code generated for **{plc_sum['clean_count']} clean tags** — "
+                f"{plc_sum.get('dirty_count', 0)} tags skipped (have findings)"
+            )
+
         prog.progress(100)
         status_box.empty()
 
@@ -975,6 +1004,172 @@ def _fuzzy(a: str, b: str, threshold: float = 0.60) -> bool:
     return SequenceMatcher(None, a.lower(), b.lower()).ratio() >= threshold
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# PLC CODE PAGE
+# ─────────────────────────────────────────────────────────────────────────────
+
+def page_plc_code():
+    st.title("⚙️ PLC Code Generation")
+    state = st.session_state.get("verification_state")
+
+    if not state:
+        st.info("No results yet. Go to **Upload & Verify** first.")
+        return
+
+    plc_code: dict    = state.get("plc_code", {})
+    plc_summary: dict = state.get("plc_summary", {})
+    image_summary     = state.get("image_summary", [])
+
+    # ── Image findings section ────────────────────────────────────────────────
+    image_report = state.get("image_report") or {}
+    img_findings = image_report.get("findings", [])
+
+    if image_summary or img_findings:
+        st.markdown("## 🖼️ Embedded Images Found")
+        if image_summary:
+            img_cols = st.columns(min(len(image_summary), 4))
+            for i, img in enumerate(image_summary[:8]):
+                col_idx = i % min(len(image_summary), 4)
+                with img_cols[col_idx]:
+                    icon = {"P&ID": "🗺️", "CAUSE_EFFECT": "📊",
+                            "PHOTO": "📸", "TABLE": "📋"}.get(img["class"], "🖼️")
+                    st.markdown(
+                        f'<div style="background:#1e293b;border-radius:8px;padding:10px;'
+                        f'margin-bottom:8px;text-align:center">'
+                        f'<div style="font-size:1.4rem">{icon}</div>'
+                        f'<div style="color:#94a3b8;font-size:0.75rem">{img["class"]}</div>'
+                        f'<div style="color:#e2e8f0;font-size:0.8rem">Page {img["page"]}</div>'
+                        f'<div style="color:#64748b;font-size:0.7rem">{img["width"]}×{img["height"]}px</div>'
+                        + (f'<div style="color:#22c55e;font-size:0.7rem">{len(img["tags_found"])} tags</div>'
+                           if img["tags_found"] else "")
+                        + f'</div>',
+                        unsafe_allow_html=True,
+                    )
+
+        if img_findings:
+            st.markdown(f"**{len(img_findings)} image cross-validation finding(s):**")
+            for f in img_findings:
+                sev = f.get("severity", "INFO")
+                with st.expander(f"[{sev}] {f.get('description','')[:80]}"):
+                    st.markdown(f.get("description", ""))
+                    if f.get("quote"):
+                        st.code(f.get("quote"), language=None)
+                    st.success(f.get("suggestion", ""))
+        st.divider()
+
+    # ── PLC code section ──────────────────────────────────────────────────────
+    if not plc_code:
+        vqs     = state.get("vqs_scores", {}) or {}
+        routing = vqs.get("routing_decision", "")
+        if routing in ("FAIL", "MANDATORY_REVISION"):
+            st.error(
+                "🚫 PLC code generation is **blocked** — CRITICAL findings must be resolved first. "
+                "Fix errors in **Review Findings**, then re-run verification."
+            )
+        else:
+            st.warning("No PLC code was generated. Run verification first, or no clean tags were found.")
+        return
+
+    clean_count = plc_summary.get("clean_count", 0)
+    dirty_count = plc_summary.get("dirty_count", 0)
+    skipped     = plc_summary.get("skipped_tags", [])
+    dirty_tags  = plc_summary.get("dirty_tags", [])
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.markdown(
+            f'<div style="background:#166534;border-radius:10px;padding:16px;text-align:center">'
+            f'<div style="font-size:2rem;font-weight:700;color:#fff">{clean_count}</div>'
+            f'<div style="color:#bbf7d0;font-size:0.85rem">Function blocks generated</div></div>',
+            unsafe_allow_html=True,
+        )
+    with c2:
+        st.markdown(
+            f'<div style="background:#7f1d1d;border-radius:10px;padding:16px;text-align:center">'
+            f'<div style="font-size:2rem;font-weight:700;color:#fff">{dirty_count}</div>'
+            f'<div style="color:#fecaca;font-size:0.85rem">Tags skipped (have findings)</div></div>',
+            unsafe_allow_html=True,
+        )
+    with c3:
+        st.markdown(
+            f'<div style="background:#1e293b;border-radius:10px;padding:16px;text-align:center">'
+            f'<div style="font-size:2rem;font-weight:700;color:#fff">{len(skipped)}</div>'
+            f'<div style="color:#94a3b8;font-size:0.85rem">Tags skipped (unknown type)</div></div>',
+            unsafe_allow_html=True,
+        )
+
+    if dirty_tags:
+        st.warning(
+            f"**Tags with findings (skipped):** {', '.join(sorted(dirty_tags))}  \n"
+            "Resolve HIGH/CRITICAL findings for these tags in **Review Findings**, "
+            "then re-run verification to unlock their PLC code."
+        )
+
+    st.markdown("---")
+
+    # Download all
+    all_code = "\n\n".join(
+        f"(* ─────── {tag} ─────── *)\n{info['code']}"
+        for tag, info in sorted(plc_code.items())
+    )
+    header = (
+        f"(* CND-Verify — Auto-generated IEC 61131-3 Structured Text\n"
+        f"   Document : {state.get('document_path','unknown')}\n"
+        f"   Generated: {plc_summary.get('generated_at','')}\n"
+        f"   Blocks   : {clean_count} function blocks\n"
+        f"   Standard : IEC 61131-3 Structured Text (ST)\n"
+        f"   Platform : CODESYS, TIA Portal, Studio 5000, RSLogix\n"
+        f"   WARNING  : Review and validate before deployment\n"
+        f"*)\n\n"
+    )
+    st.download_button(
+        "⬇️  Download All PLC Code (.st)",
+        data=(header + all_code).encode(),
+        file_name="cnd_verify_plc_code.st",
+        mime="text/plain",
+        type="primary",
+    )
+
+    st.markdown("---")
+    st.markdown(f"## Generated Function Blocks ({clean_count})")
+
+    CLASS_ICONS = {
+        "PUMP": "🔄", "MOTOR": "⚡", "ON_OFF_VALVE": "🔵", "VALVE": "🔵",
+        "CONTROL_VALVE": "🎛️", "PRESSURE_TRANSMITTER": "📈", "PT": "📈",
+        "FLOW_TRANSMITTER": "💧", "FT": "💧", "LEVEL_TRANSMITTER": "📊",
+        "LT": "📊", "TEMPERATURE_TRANSMITTER": "🌡️", "TT": "🌡️",
+        "INTERLOCK": "🔒", "OTHER": "⚙️",
+    }
+
+    by_class: dict[str, list[str]] = {}
+    for tag, info in plc_code.items():
+        cls = info.get("equipment_class", "OTHER")
+        by_class.setdefault(cls, []).append(tag)
+
+    for cls, tags in sorted(by_class.items()):
+        icon = CLASS_ICONS.get(cls, "⚙️")
+        st.markdown(f"### {icon} {cls.replace('_',' ').title()} ({len(tags)})")
+        for tag in sorted(tags):
+            info = plc_code[tag]
+            pg   = info.get("page", 0)
+            with st.expander(f"FB_{tag.replace('-','_')} — {tag}  ·  {'page ' + str(pg) if pg else 'no page'}"):
+                st.markdown(
+                    f'<div style="background:#052e16;border:1px solid #166534;'
+                    f'border-radius:6px;padding:8px 14px;margin-bottom:10px">'
+                    f'<span style="color:#22c55e;font-weight:700">✅ VERIFIED CLEAN — '
+                    f'No HIGH/CRITICAL findings for {tag}</span></div>',
+                    unsafe_allow_html=True,
+                )
+                st.code(info["code"], language="text")
+                st.download_button(
+                    f"⬇️ Download FB_{tag.replace('-','_')}.st",
+                    data=info["code"].encode(),
+                    file_name=f"FB_{tag.replace('-','_')}.st",
+                    mime="text/plain",
+                    key=f"dl_{tag}",
+                )
+
+
 # ── Router ────────────────────────────────────────────────────────────────────
 
 if page == "Upload & Verify":
@@ -983,3 +1178,5 @@ elif page == "Score Dashboard":
     page_dashboard()
 elif page == "Review Findings":
     page_review()
+elif page == "PLC Code":
+    page_plc_code()
