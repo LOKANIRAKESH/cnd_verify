@@ -6,12 +6,13 @@ Every finding includes: page number, section title, rule violated, rule text, wh
 
 import re
 import uuid
+import json
 import chromadb
 from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
 from difflib import SequenceMatcher
 from langchain_ollama import OllamaLLM
 from langchain_core.prompts import PromptTemplate
-from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.output_parsers import StrOutputParser
 import yaml
 
 from src.orchestration.state import Finding, AgentReport
@@ -79,6 +80,32 @@ def build_finding(
     )
 
 
+def _parse_llm_json(raw: str) -> list:
+    """
+    Robustly extract a JSON array from LLM output.
+    Llama 3.1 often wraps JSON in prose or code fences — this handles that.
+    """
+    if not raw:
+        return []
+    # Strip markdown code fences
+    raw = re.sub(r"```(?:json)?", "", raw).strip()
+    # Try direct parse
+    try:
+        result = json.loads(raw)
+        return result if isinstance(result, list) else []
+    except json.JSONDecodeError:
+        pass
+    # Find the first [...] block in the text
+    match = re.search(r"\[.*?\]", raw, re.DOTALL)
+    if match:
+        try:
+            result = json.loads(match.group())
+            return result if isinstance(result, list) else []
+        except json.JSONDecodeError:
+            pass
+    return []
+
+
 def check_interlock_fields_llm(interlock_text: str, llm, domain_context: str) -> list[dict]:
     prompt = PromptTemplate.from_template(
         """You are a control systems engineer reviewing interlock definitions in a Control Narrative Document.
@@ -107,12 +134,12 @@ Return a JSON array. Each element:
   "severity": "CRITICAL or HIGH"
 }}
 
-Return [] if all interlocks are complete. Return only JSON."""
+Return [] if all interlocks are complete. Return ONLY the JSON array, no explanation."""
     )
-    chain = prompt | llm | JsonOutputParser()
+    chain = prompt | llm | StrOutputParser()
     try:
-        result = chain.invoke({"domain_context": domain_context, "interlock_text": interlock_text})
-        return result if isinstance(result, list) else []
+        raw = chain.invoke({"domain_context": domain_context, "interlock_text": interlock_text[:4000]})
+        return _parse_llm_json(raw)
     except Exception:
         return []
 
@@ -126,7 +153,7 @@ RULE (ISA-18.2): Every alarm must have ALL six fields:
 2. alarm_type — HH, H, L, or LL
 3. setpoint_value — a specific number (not "high" or "elevated")
 4. units — engineering units (PSI, degrees C, L/min, %)
-5. priority — Priority 1 (Critical), 2 (High), 3 (Medium), or 4 (Low)
+5. priority — Priority 1 (Critical), 2 (High), 3 (Medium), or 4 (Low). An empty or blank priority field counts as missing.
 6. operator_response — specific action (not just "check the process" or "investigate")
 
 DOMAIN KNOWLEDGE:
@@ -135,8 +162,9 @@ DOMAIN KNOWLEDGE:
 ALARM SECTION FROM DOCUMENT:
 {alarm_text}
 
-For each alarm, list only the fields that are MISSING or too vague.
-Operator response is vague if it says "check", "investigate", or "monitor" with no specific action.
+For each alarm, list only the fields that are MISSING or empty.
+A priority field with an empty value ("") counts as missing.
+Operator response is vague only if it says literally "check" or "investigate" with NO specific action.
 
 Return a JSON array. Each element:
 {{
@@ -146,12 +174,12 @@ Return a JSON array. Each element:
   "severity": "HIGH or WARNING"
 }}
 
-Return [] if all alarms are complete. Return only JSON."""
+Return [] if all alarms are complete. Return ONLY the JSON array, no explanation."""
     )
-    chain = prompt | llm | JsonOutputParser()
+    chain = prompt | llm | StrOutputParser()
     try:
-        result = chain.invoke({"domain_context": domain_context, "alarm_text": alarm_text})
-        return result if isinstance(result, list) else []
+        raw = chain.invoke({"domain_context": domain_context, "alarm_text": alarm_text[:4000]})
+        return _parse_llm_json(raw)
     except Exception:
         return []
 
@@ -320,11 +348,22 @@ def run_completeness_agent(state: dict) -> dict:
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _find_section(sections: dict, keyword: str) -> tuple[str, str]:
-    """Return (text, title) for the first section matching keyword."""
+    """
+    Return concatenated text and the first matching title for all sections whose
+    title contains keyword.  This is critical when a single logical section (e.g.
+    INTERLOCKS) is split by extract_sections() into a preamble entry plus one
+    sub-entry per interlock (e.g. "INTERLOCK IL-101 — ...").
+    Returning only the preamble would leave the LLM with nothing useful.
+    """
+    matched_texts: list[str] = []
+    first_title = ""
+    kw_upper = keyword.upper()
     for title, text in sections.items():
-        if keyword.upper() in title.upper():
-            return text, title
-    return "", ""
+        if kw_upper in title.upper():
+            if not first_title:
+                first_title = title
+            matched_texts.append(text)
+    return "\n\n".join(matched_texts), first_title
 
 
 def _find_text_page(document_text: str, search_text: str, fallback_page: int) -> int:

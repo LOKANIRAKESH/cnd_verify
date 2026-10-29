@@ -228,11 +228,11 @@ def page_upload():
         samples = {
             "— Select —": None,
             "Pump Station 01 — Clean (no errors)":
-                "data/synthetic_cnds/pump_station_01_clean.txt",
-            "Pump Station 02 — 6 completeness errors":
-                "data/synthetic_cnds/pump_station_02_completeness_errors.txt",
+                "data/synthetic_cnds/pump_station_01_clean.pdf",
+            "Pump Station 02 — 7 completeness errors":
+                "data/synthetic_cnds/pump_station_02_completeness_errors.pdf",
             "Pump Station 03 — 4 consistency errors":
-                "data/synthetic_cnds/pump_station_03_consistency_errors.txt",
+                "data/synthetic_cnds/pump_station_03_consistency_errors.pdf",
         }
         chosen = st.selectbox("Sample", list(samples.keys()), label_visibility="collapsed")
 
@@ -299,20 +299,37 @@ def _run_safe(fn, state, name):
         state = fn(state)
         elapsed = time.time() - t0
 
-        # Show what this agent found
         report_key = name.lower().split()[0] + "_report"
         report = state.get(report_key, {}) or {}
         n = len(report.get("findings", []))
         score = report.get("score", 1.0) * 100
         critical = report.get("critical_count", 0)
         high = report.get("high_count", 0)
+        warning = report.get("warning_count", 0)
 
-        if n == 0:
+        if state.get("error"):
+            st.error(f"❌ **{name}** crashed: {state['error']}")
+        elif n == 0:
             st.success(f"✅ **{name}** — No issues found  (score 100%)  [{elapsed:.1f}s]")
         elif critical > 0:
-            st.error(f"🔴 **{name}** — {n} finding(s): {critical} CRITICAL, {high} HIGH  (score {score:.0f}%)  [{elapsed:.1f}s]")
+            st.error(f"🔴 **{name}** — {n} finding(s): {critical} CRITICAL, {high} HIGH  "
+                     f"(score {score:.0f}%)  [{elapsed:.1f}s]")
         else:
-            st.warning(f"🟡 **{name}** — {n} finding(s): {high} HIGH  (score {score:.0f}%)  [{elapsed:.1f}s]")
+            st.warning(f"🟡 **{name}** — {n} finding(s): {high} HIGH, {warning} WARNING  "
+                       f"(score {score:.0f}%)  [{elapsed:.1f}s]")
+
+        # Show per-finding summary in expandable for debug
+        if n > 0:
+            with st.expander(f"  ↳ {name} findings ({n})", expanded=False):
+                for f in report.get("findings", []):
+                    sev = f.get("severity", "INFO")
+                    pg = f.get("page_number", 0)
+                    st.markdown(
+                        f'<span class="badge badge-{sev}">{sev}</span> '
+                        f'<span class="page-badge">p.{pg}</span> '
+                        f'{f.get("description","")[:120]}',
+                        unsafe_allow_html=True
+                    )
 
     except Exception as e:
         st.error(f"❌ **{name}** failed: {e}")
@@ -322,18 +339,38 @@ def _run_safe(fn, state, name):
 def _show_parse_summary(state):
     tags = state.get("tag_inventory", [])
     sections = state.get("sections", {})
-    sp = st.expander(f"Document parsed — {len(tags)} ISA tags found, {len(sections)} sections detected", expanded=False)
+    setpoints = state.get("setpoint_table", [])
+    sp = st.expander(
+        f"Document parsed — {len(tags)} ISA tags | {len(sections)} sections | {len(setpoints)} setpoints extracted",
+        expanded=False
+    )
     with sp:
-        col_t, col_s = st.columns(2)
+        col_t, col_s, col_sp = st.columns(3)
         with col_t:
             st.markdown("**ISA Tags found:**")
             chips = " ".join(f'<span class="tag-chip">{t}</span>' for t in sorted(tags))
             st.markdown(chips or "*none detected*", unsafe_allow_html=True)
         with col_s:
             st.markdown("**Sections detected:**")
-            for sec in list(sections.keys())[:15]:
-                st.markdown(f'<div class="sec-row"><span class="sec-found">✓</span>{sec}</div>',
-                            unsafe_allow_html=True)
+            required_kws = {"GENERAL", "EQUIPMENT", "MODE", "STARTUP", "SHUTDOWN",
+                            "INTERLOCK", "ALARM", "SETPOINT", "EMERGENCY"}
+            for sec in list(sections.keys())[:20]:
+                found = any(kw in sec.upper() for kw in required_kws)
+                icon = '<span class="sec-found">✓</span>' if found else '<span style="color:#94a3b8;margin-right:8px">·</span>'
+                st.markdown(f'<div class="sec-row">{icon}{sec}</div>', unsafe_allow_html=True)
+        with col_sp:
+            st.markdown("**Setpoints extracted (from table):**")
+            if setpoints:
+                for row in setpoints[:12]:
+                    st.markdown(
+                        f'<div class="sec-row"><span class="tag-chip">{row["tag"]}</span>'
+                        f' &nbsp; {row["parameter"]} = <b>{row["value"]}</b> {row["units"]}'
+                        f' <span style="color:#64748b;font-size:0.75rem">(p.{row.get("page",0)})</span></div>',
+                        unsafe_allow_html=True
+                    )
+            else:
+                st.markdown("*No setpoints found in tables* — consistency setpoint checks will be limited.")
+                st.caption("Tip: Make sure the PDF has a proper setpoints table with TAG / PARAMETER / VALUE columns.")
 
 
 def _show_result_banner(state):

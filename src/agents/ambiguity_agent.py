@@ -13,11 +13,12 @@ Six ambiguity types (from Gervasi et al. 2019, adapted to industrial control):
 
 import re
 import uuid
+import json
 import chromadb
 from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
 from langchain_ollama import OllamaLLM
 from langchain_core.prompts import PromptTemplate
-from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.output_parsers import StrOutputParser
 import yaml
 
 from src.orchestration.state import Finding, AgentReport
@@ -97,6 +98,24 @@ def _extract_context(text: str, match: re.Match, window: int = 200) -> str:
 # LLM confirmation — filters out false positives
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _parse_llm_json(raw: str) -> dict | None:
+    """Robustly extract a JSON object from Llama 3.1 output."""
+    if not raw:
+        return None
+    raw = re.sub(r"```(?:json)?", "", raw).strip()
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        pass
+    match = re.search(r"\{.*?\}", raw, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group())
+        except json.JSONDecodeError:
+            pass
+    return None
+
+
 def _confirm_ambiguity_with_llm(phrase: str, context: str, ambiguity_type: str, llm) -> dict | None:
     prompt = PromptTemplate.from_template(
         """You are a control systems engineer reviewing a Control Narrative Document.
@@ -130,11 +149,12 @@ Return JSON:
   "programmable_alternative": "what the text should say to be unambiguous (only if is_ambiguous=true)"
 }}
 
-Return only JSON."""
+Return ONLY the JSON object, no explanation."""
     )
-    chain = prompt | llm | JsonOutputParser()
+    chain = prompt | llm | StrOutputParser()
     try:
-        result = chain.invoke({"phrase": phrase, "context": context, "ambiguity_type": ambiguity_type})
+        raw = chain.invoke({"phrase": phrase, "context": context, "ambiguity_type": ambiguity_type})
+        result = _parse_llm_json(raw)
         if isinstance(result, dict) and result.get("is_ambiguous"):
             return result
     except Exception:

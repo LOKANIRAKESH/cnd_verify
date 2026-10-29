@@ -154,8 +154,8 @@ def extract_tags(document_text: str) -> list[str]:
 
 def extract_setpoints_from_table(document_text: str) -> list[dict]:
     """
-    Parse the setpoints table.
-    Returns list of {tag, parameter, value, units, page} dicts.
+    Parse the setpoints table from text with [PAGE N] markers.
+    Supports both pipe-delimited (|) and space-delimited rows.
     """
     setpoints = []
     in_table = False
@@ -192,26 +192,93 @@ def extract_setpoints_from_table(document_text: str) -> list[dict]:
     return setpoints
 
 
+def extract_setpoints_from_pdf(file_path: str) -> list[dict]:
+    """
+    Use pdfplumber to extract structured setpoints tables from PDFs.
+    This is much more reliable than parsing raw PyMuPDF text for table data.
+    Returns list of {tag, parameter, value, units, page} dicts.
+    """
+    setpoints = []
+    try:
+        with pdfplumber.open(file_path) as pdf:
+            for page_num, page in enumerate(pdf.pages, start=1):
+                tables = page.extract_tables()
+                for table in tables:
+                    if not table or len(table) < 2:
+                        continue
+                    header = [str(c).strip().upper() if c else "" for c in table[0]]
+                    # Only process setpoints-style tables (have TAG + VALUE columns)
+                    if "TAG" not in " ".join(header) and "VALUE" not in " ".join(header):
+                        continue
+                    # Map column indices
+                    tag_col = _col_index(header, ("TAG",))
+                    param_col = _col_index(header, ("PARAMETER", "PARAM", "DESCRIPTION"))
+                    val_col = _col_index(header, ("VALUE", "VAL", "SETPOINT"))
+                    unit_col = _col_index(header, ("UNITS", "UNIT", "UOM", "ENG"))
+                    if tag_col is None or val_col is None:
+                        continue
+                    for row in table[1:]:
+                        if not row or len(row) <= max(c for c in [tag_col, val_col] if c is not None):
+                            continue
+                        tag_raw = str(row[tag_col]).strip() if row[tag_col] else ""
+                        if not ISA_TAG_PATTERN.match(tag_raw):
+                            continue
+                        val_raw = str(row[val_col]).strip() if row[val_col] else ""
+                        num_match = re.search(r"[\d]+(?:\.[0-9]+)?", val_raw)
+                        if not num_match:
+                            continue
+                        param_raw = str(row[param_col]).strip() if (param_col is not None and row[param_col]) else ""
+                        unit_raw = str(row[unit_col]).strip() if (unit_col is not None and row[unit_col]) else ""
+                        setpoints.append({
+                            "tag": tag_raw.upper(),
+                            "parameter": param_raw.lower().replace(" ", "_"),
+                            "value": float(num_match.group()),
+                            "units": unit_raw.lower().strip(),
+                            "page": page_num,
+                            "raw_line": " | ".join(str(c) for c in row if c),
+                        })
+    except Exception:
+        pass
+    return setpoints
+
+
+def _col_index(header: list[str], candidates: tuple) -> int | None:
+    """Return the first column index whose header matches any candidate string."""
+    for i, h in enumerate(header):
+        for c in candidates:
+            if c in h:
+                return i
+    return None
+
+
 def _parse_table_row(line: str) -> dict | None:
+    # Try pipe-delimited first
     parts = [p.strip() for p in line.split("|")]
     if len(parts) >= 4:
         tag = parts[0]
         parameter = parts[1]
         raw_value = parts[2]
         units = parts[3]
-
-        if not ISA_TAG_PATTERN.match(tag):
-            return None
-        try:
-            value = float(re.search(r"[\d.]+", raw_value).group())
-        except (AttributeError, ValueError):
-            return None
-
+        if ISA_TAG_PATTERN.match(tag):
+            try:
+                value = float(re.search(r"[\d.]+", raw_value).group())
+                return {
+                    "tag": tag,
+                    "parameter": parameter.lower().replace(" ", "_"),
+                    "value": value,
+                    "units": units.lower().strip(),
+                    "raw_line": line,
+                }
+            except (AttributeError, ValueError):
+                pass
+    # Try whitespace-separated: TAG  PARAMETER  VALUE  UNITS
+    m = re.match(r"^([A-Z]{1,3}-[0-9]{1,4}[A-Z]?)\s+(.+?)\s+([\d]+(?:\.[0-9]+)?)\s+(\S+)\s*$", line)
+    if m:
         return {
-            "tag": tag,
-            "parameter": parameter.lower().replace(" ", "_"),
-            "value": value,
-            "units": units.lower().strip(),
+            "tag": m.group(1),
+            "parameter": m.group(2).lower().replace(" ", "_"),
+            "value": float(m.group(3)),
+            "units": m.group(4).lower(),
             "raw_line": line,
         }
     return None
@@ -234,10 +301,19 @@ def get_page_of_text(document_text: str, search_text: str) -> int:
 
 def prepare_document(file_path: str) -> dict:
     """Full pipeline: load → extract all → return initial VerificationState."""
+    path = Path(file_path)
     text = load_document(file_path)
     sections_text, sections_pages = extract_sections(text)
     tags = extract_tags(text)
-    setpoints = extract_setpoints_from_table(text)
+
+    # PDFs: use pdfplumber for proper structured table extraction
+    # Text files: fall back to [PAGE N] marker text parsing
+    if path.suffix.lower() == ".pdf":
+        setpoints = extract_setpoints_from_pdf(file_path)
+        if not setpoints:
+            setpoints = extract_setpoints_from_table(text)
+    else:
+        setpoints = extract_setpoints_from_table(text)
 
     return {
         "document_path": file_path,

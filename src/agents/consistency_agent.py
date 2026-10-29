@@ -10,12 +10,13 @@ Every finding records: page number, section, quoted text, rule violated, why it 
 
 import re
 import uuid
+import json
 import itertools
 import chromadb
 from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
 from langchain_ollama import OllamaLLM
 from langchain_core.prompts import PromptTemplate
-from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.output_parsers import StrOutputParser
 import yaml
 
 from src.orchestration.state import Finding, AgentReport
@@ -33,6 +34,26 @@ NUMBER_RE = re.compile(r"([\d]+(?:\.[0-9]+)?)")
 # ─────────────────────────────────────────────────────────────────────────────
 # CHECK 1 — Setpoint prose vs. table mismatch (deterministic + LLM extraction)
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _parse_llm_json(raw: str) -> list:
+    """Robustly extract a JSON array from Llama 3.1 output (often has preamble text)."""
+    if not raw:
+        return []
+    raw = re.sub(r"```(?:json)?", "", raw).strip()
+    try:
+        result = json.loads(raw)
+        return result if isinstance(result, list) else []
+    except json.JSONDecodeError:
+        pass
+    match = re.search(r"\[.*?\]", raw, re.DOTALL)
+    if match:
+        try:
+            result = json.loads(match.group())
+            return result if isinstance(result, list) else []
+        except json.JSONDecodeError:
+            pass
+    return []
+
 
 def _extract_prose_setpoints(section_text: str, llm) -> list[dict]:
     """
@@ -55,11 +76,12 @@ Return a JSON array. Each element:
 }}
 
 Only include entries where both a tag (format: XX-NNN) AND a numeric value are present.
-Return [] if nothing found. Return only JSON."""
+Return [] if nothing found. Return ONLY the JSON array, no explanation."""
     )
-    chain = prompt | llm | JsonOutputParser()
+    chain = prompt | llm | StrOutputParser()
     try:
-        return chain.invoke({"text": section_text[:3000]}) or []
+        raw = chain.invoke({"text": section_text[:3000]})
+        return _parse_llm_json(raw)
     except Exception:
         return []
 
@@ -300,6 +322,87 @@ def check_equipment_type_consistency(
 # CHECK 3 — Sequence ordering contradiction (LLM-based)
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _check_pump_valve_order(sections: dict, document_text: str, sections_pages: dict) -> list[Finding]:
+    """
+    Deterministic check: in a shutdown or ESD sequence, a pump must be stopped
+    AFTER (not before) the discharge isolation valve is closed.
+    Starting a pump before opening the valve, or stopping after closing the valve is correct.
+    Stopping a pump BEFORE closing the discharge valve is a safety violation (reverse flow risk).
+
+    Looks for the pattern: stop pump step appears at a LOWER step number than close valve step
+    in the same shutdown sequence.
+    """
+    findings = []
+    PUMP_STOP = re.compile(r"(?:stop|de-?energi[sz]e|shut ?down)\s+(?:pump|P-\d+)", re.IGNORECASE)
+    VALVE_CLOSE = re.compile(r"close\s+(?:valve|XV-\d+|discharge|isolation)", re.IGNORECASE)
+    STEP_NUM = re.compile(r"step\s*(\d+)", re.IGNORECASE)
+
+    for title, text in sections.items():
+        if not any(kw in title.upper() for kw in ("SHUTDOWN", "STOP", "ESD", "EMERGENCY")):
+            continue
+
+        # Extract steps with their numbers
+        steps: list[tuple[int, str]] = []
+        for line in text.split("\n"):
+            m = STEP_NUM.search(line)
+            if m:
+                steps.append((int(m.group(1)), line.strip()))
+
+        pump_stop_step = None
+        valve_close_step = None
+        pump_stop_line = ""
+        valve_close_line = ""
+
+        for step_num, line in steps:
+            if PUMP_STOP.search(line) and pump_stop_step is None:
+                pump_stop_step = step_num
+                pump_stop_line = line
+            if VALVE_CLOSE.search(line) and valve_close_step is None:
+                valve_close_step = step_num
+                valve_close_line = line
+
+        if pump_stop_step is not None and valve_close_step is not None:
+            if pump_stop_step < valve_close_step:
+                page = _find_text_page(document_text, pump_stop_line[:40], sections_pages.get(title, 0))
+                findings.append(_build_finding(
+                    finding_type="UNSAFE_SEQUENCE_ORDER",
+                    description=(
+                        f"In '{title}': pump is stopped at Step {pump_stop_step} "
+                        f"BEFORE the discharge valve is closed at Step {valve_close_step}. "
+                        f"Correct order: close valve first, then stop pump."
+                    ),
+                    severity="HIGH",
+                    section_title=title,
+                    page_number=page,
+                    quote=(
+                        f"[Step {pump_stop_step}] {pump_stop_line}  "
+                        f"↔  [Step {valve_close_step}] {valve_close_line}"
+                    ),
+                    rule_violated="Shutdown sequence safety order — close valve before stopping pump",
+                    rule_text=(
+                        "Industry best practice and ISA-88 guidance: during a shutdown sequence, "
+                        "the discharge isolation valve must be closed BEFORE the pump is stopped. "
+                        "This prevents reverse flow (back-flow) through the stopped pump, which "
+                        "causes water hammer and can damage pump seals and check valves."
+                    ),
+                    why_it_matters=(
+                        "If the pump is stopped before the discharge valve is closed, the pressure "
+                        "differential across the pump will drive fluid backwards through the impeller. "
+                        "This back-flow causes water hammer, cavitation, and can shear pump shaft seals. "
+                        "The PLC will implement the written order — an incorrect order causes equipment damage."
+                    ),
+                    suggestion=(
+                        f"Reorder the steps in '{title}': "
+                        f"(1) ramp down flow controller, "
+                        f"(2) close discharge valve, "
+                        f"(3) stop pump after valve confirmed closed. "
+                        f"Update step numbers accordingly."
+                    ),
+                    evidence_source="Deterministic sequence order check — ISA-88 shutdown guidance",
+                ))
+    return findings
+
+
 def check_sequence_contradictions(
     sections: dict,
     document_text: str,
@@ -308,22 +411,28 @@ def check_sequence_contradictions(
 ) -> list[Finding]:
     findings = []
 
+    # First: run deterministic pump/valve order check (catches CON4-type errors reliably)
+    findings.extend(_check_pump_valve_order(sections, document_text, sections_pages))
+
     # Collect all sequence-type sections
     sequence_sections = {
         t: s for t, s in sections.items()
         if any(kw in t.upper() for kw in ("STARTUP", "SHUTDOWN", "SEQUENCE", "EMERGENCY", "ESD"))
     }
     if len(sequence_sections) < 2:
-        return []
+        return findings
 
     prompt = PromptTemplate.from_template(
-        """You are a control systems engineer reviewing startup and shutdown sequences for contradictions.
+        """You are a control systems engineer reviewing sequences for logical contradictions.
 
-IMPORTANT: A contradiction is when two sequences specify OPPOSITE ordering for the same pair of actions.
-Example of a contradiction:
-  - Startup says "Step 3: Open valve XV-201, Step 5: Start pump P-101"
-  - Shutdown says "Step 1: Stop pump P-101, Step 3: Close valve XV-201 BEFORE stopping P-101"
-  These contradict each other on the relative ordering of XV-201 and P-101.
+A REAL contradiction is when the SAME equipment appears with conflicting states or actions in two
+sequences that should not conflict. For example:
+- Sequence A says "XV-201 is a gate valve", Sequence B says "XV-201 is a ball valve"
+- Sequence A says "Step 2: open XV-201, Step 4: start P-101", Sequence B says "Step 1: start P-101, Step 3: open XV-201"
+  (same ordering conflict in what should be consistent context)
+
+A shutdown reversing a startup in DIRECTION (open→close, start→stop) is EXPECTED — do NOT flag that.
+Only flag it if two sequences that should AGREE actually DISAGREE about the same fact.
 
 SEQUENCE A — {title_a}:
 {text_a}
@@ -331,12 +440,7 @@ SEQUENCE A — {title_a}:
 SEQUENCE B — {title_b}:
 {text_b}
 
-List only REAL contradictions — opposite ordering of the same equipment actions.
-Do NOT flag things that are just different (startup vs. shutdown have opposite directions by design).
-A shutdown sequence reversing a startup sequence is EXPECTED and NOT a contradiction.
-Flag it only if two sequences that should agree DISAGREE (e.g., two startup variants, or a sequence step contradicts a safety interlock).
-
-Return JSON array. Each element:
+List only REAL contradictions. Return a JSON array:
 {{
   "equipment_tags": ["P-101", "XV-201"],
   "description": "What the contradiction is",
@@ -344,26 +448,32 @@ Return JSON array. Each element:
   "sequence_b_quote": "exact step from Sequence B",
   "severity": "HIGH or WARNING"
 }}
-Return [] if no contradictions. Return only JSON."""
+Return [] if no contradictions. Return ONLY the JSON array, no explanation."""
     )
 
     section_pairs = list(itertools.combinations(sequence_sections.items(), 2))
     for (title_a, text_a), (title_b, text_b) in section_pairs:
-        chain = prompt | llm | JsonOutputParser()
+        chain = prompt | llm | StrOutputParser()
         try:
-            results = chain.invoke({
+            raw = chain.invoke({
                 "title_a": title_a,
                 "text_a": text_a[:2000],
                 "title_b": title_b,
                 "text_b": text_b[:2000],
             })
+            results = _parse_llm_json(raw)
         except Exception:
             continue
 
         for item in (results or []):
-            quote = f"[{title_a}] {item.get('sequence_a_quote', '')}  ↔  [{title_b}] {item.get('sequence_b_quote', '')}"
-            page_a = _find_text_page(document_text, item.get("sequence_a_quote", "")[:40],
-                                     sections_pages.get(title_a, 0))
+            quote = (
+                f"[{title_a}] {item.get('sequence_a_quote', '')}  "
+                f"↔  [{title_b}] {item.get('sequence_b_quote', '')}"
+            )
+            page_a = _find_text_page(
+                document_text, item.get("sequence_a_quote", "")[:40],
+                sections_pages.get(title_a, 0)
+            )
             findings.append(_build_finding(
                 finding_type="SEQUENCE_ORDERING_CONTRADICTION",
                 description=item.get("description", "Sequence ordering contradiction detected."),
