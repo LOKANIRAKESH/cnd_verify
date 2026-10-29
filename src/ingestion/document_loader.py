@@ -134,13 +134,68 @@ def extract_sections(document_text: str) -> tuple[dict[str, str], dict[str, int]
     return sections_text, sections_pages
 
 
+# Lines that look ALL-CAPS but must never be treated as section headings
+_NOT_HEADING_RE = re.compile(
+    r"^("
+    r"[A-Z]{1,3}-[0-9]{1,4}[A-Z]?(?:-[A-Z0-9]+)*\s*$"  # ISA tags: PT-101, XV-201, ESD-1, PT-101-HH
+    r"|DN\d+(?:[,\s]+PN\d+)?\s*$"                         # Pipe specs: DN200, DN200, PN16
+    r"|PN\d+\s*$"                                          # Pressure nominal: PN16
+    r"|REV(?:ISION)?[\s:]+[A-Z0-9].*$"                    # Revision markers: REV C, REVISION: C
+    r"|CONFIDENTIAL.*$"                                    # Document stamps
+    r"|NOT TO SCALE.*$"                                    # Drawing notes
+    r"|FIG(?:URE)?[.\s].*$"                                # Figure captions: FIG. 1 …
+    r")",
+    re.IGNORECASE,
+)
+
+# Diagram/label keywords that are NOT section headings even when ALL-CAPS
+_DIAGRAM_LABEL_WORDS = frozenset({
+    "SUCTION", "DISCHARGE", "INLET", "OUTLET", "VESSEL", "PIPELINE",
+    "LEGEND", "DATUM", "HEADER", "MANIFOLD", "RETURN", "BYPASS",
+    "PROCESS",  # "TO PROCESS I" type diagram flow labels
+})
+
+
 def _is_heading(line: str) -> bool:
     if not line or len(line) > 120:
         return False
+    stripped = line.strip()
+
+    # Explicit exclusions — these look like headings but aren't
+    if _NOT_HEADING_RE.match(stripped):
+        return False
+
+    # Lines ending with sentence-ending punctuation are text, not headings
+    if re.search(r"[.!?'\"]\s*$", stripped):
+        return False
+
+    # HMI state completion messages ("STARTUP COMPLETE", "SHUTDOWN COMPLETE")
+    if re.match(r"^(?:STARTUP|SHUTDOWN|ESD|EMERGENCY)\s+COMPLETE\s*$", stripped, re.IGNORECASE):
+        return False
+
+    # Named heading keywords (INTERLOCKS, ALARMS, SETPOINTS, STARTUP, SHUTDOWN, …)
+    # BUT reject long mixed-case prose sentences that merely contain a keyword
+    # e.g. "Interlock IL-101 activates when PT-101 discharge pressure exceeds 150 PSI"
+    # Real headings are ALL-CAPS short strings or short title-cased labels.
     if HEADING_PATTERN.search(line):
-        return True
+        if len(stripped) > 60 and stripped != stripped.upper():
+            pass  # prose sentence with a keyword — not a heading
+        else:
+            return True
+
+    # ALL CAPS line — require at least 2 words with ≥2 letters to avoid
+    # ISA tags, single states ("STANDBY"), diagram labels ("LEGEND")
     if line.isupper() and 4 < len(line) < 80:
+        alpha_words = [w for w in re.split(r"[\s,;/|]+", stripped) if re.search(r"[A-Za-z]{2,}", w)]
+        if len(alpha_words) < 2:
+            return False
+        # Exclude P&ID diagram labels (common location/topology words)
+        upper_words = set(w.upper() for w in alpha_words)
+        if upper_words & _DIAGRAM_LABEL_WORDS:
+            return False
         return True
+
+    # Numbered section: "3.1 Description" or "4. Setpoints"
     if re.match(r"^[0-9]+\.[0-9]*[\s:]", line):
         return True
     return False

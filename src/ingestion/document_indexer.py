@@ -228,12 +228,14 @@ def _flush_batch(collection, ids, docs, metas):
 def _infer_parameter(sentence: str, tag: str) -> str:
     """Guess the parameter type from surrounding words."""
     s = sentence.lower()
-    if any(w in s for w in ("trip", "shutdown", "esd")):     return "trip"
-    if any(w in s for w in ("high high", "hh")):             return "hi_hi"
-    if any(w in s for w in ("high alarm", "hi alarm", "high")):return "hi"
-    if any(w in s for w in ("low low", "ll")):               return "lo_lo"
-    if any(w in s for w in ("low alarm", "lo alarm", "low")):return "lo"
-    if any(w in s for w in ("setpoint", "set point", "sp")): return "sp"
+    if any(w in s for w in ("trip", "shutdown", "esd")):                    return "trip"
+    if any(w in s for w in ("high high", "hh")):                            return "hi_hi"
+    if any(w in s for w in ("exceed", "above", "greater than",
+                            "high alarm", "hi alarm", "high")):              return "hi"
+    if any(w in s for w in ("low low", "ll")):                              return "lo_lo"
+    if any(w in s for w in ("below", "falls below", "drops below",
+                            "less than", "low alarm", "lo alarm", "low")):  return "lo"
+    if any(w in s for w in ("setpoint", "set point", "sp")):                return "sp"
     return "value"
 
 

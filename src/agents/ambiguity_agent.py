@@ -77,6 +77,24 @@ PATTERNS: dict[str, re.Pattern] = {
 # Sections worth scanning (skip preamble and revision history)
 SCAN_SECTIONS = {"INTERLOCK", "ALARM", "STARTUP", "SHUTDOWN", "OPERATION", "CONTROL", "EMERGENCY", "MODE"}
 
+# Sections that are never operational content — always skip
+_SKIP_SECTIONS = frozenset({"PREAMBLE", "REVISION", "HISTORY", "DOCUMENT INFORMATION"})
+
+
+def _should_scan_section(title: str, text: str) -> bool:
+    """Return True if this section should be scanned for ambiguous language."""
+    title_upper = title.upper()
+    # Explicitly non-operational sections
+    if any(kw in title_upper for kw in _SKIP_SECTIONS):
+        return False
+    # Known operational keywords
+    if any(kw in title_upper for kw in SCAN_SECTIONS):
+        return True
+    # Numbered sections with enough content are operational modes (3.1 STOPPED, 3.3 RUNNING)
+    if re.match(r"^\d", title_upper) and len(text.split()) > 20:
+        return True
+    return False
+
 # ISA tag pattern — helps detect when "the pump" is actually specific
 ISA_TAG_RE = re.compile(r"\b[A-Z]{1,3}-[0-9]{1,4}[A-Z]?\b")
 
@@ -278,7 +296,7 @@ def run_ambiguity_agent(state: dict) -> dict:
 
     for section_title, section_text in sections.items():
         # Only scan operational sections — skip preamble, revision history
-        if not any(kw in section_title.upper() for kw in SCAN_SECTIONS):
+        if not _should_scan_section(section_title, section_text):
             continue
 
         section_page = sections_pages.get(section_title, 0)
@@ -300,10 +318,17 @@ def run_ambiguity_agent(state: dict) -> dict:
                 # Get context window
                 context = _extract_context(section_text, match)
 
-                # LLM confirmation — only keep genuine ambiguities
+                # LLM confirmation — filters false positives.
+                # If LLM fails (returns None), fall back to accepting the regex match
+                # at default severity rather than silently dropping it.
                 confirmation = _confirm_ambiguity_with_llm(phrase, context, ambiguity_type, llm)
                 if confirmation is None:
-                    continue
+                    confirmation = {
+                        "is_ambiguous": True,
+                        "severity": _SEVERITY_MAP.get(ambiguity_type, "WARNING"),
+                        "explanation": f"Matches {ambiguity_type} pattern — LLM confirmation unavailable",
+                        "programmable_alternative": "",
+                    }
 
                 page = _find_text_page(document_text, context[:40], section_page)
 

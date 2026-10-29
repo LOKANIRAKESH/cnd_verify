@@ -12,8 +12,6 @@ import re
 import uuid
 import json
 import itertools
-import chromadb
-from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
 from langchain_ollama import OllamaLLM
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
@@ -217,6 +215,263 @@ def check_setpoint_consistency(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# CHECK 1c — Direct raw-text condition scan (primary, no index/LLM dependency)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Finds comparison operator + value: "exceeds 150 PSI", "below 20 L/min"
+_CMP_VALUE_RE = re.compile(
+    r'\b(exceed[s]?|above|below|falls?\s+below|drops?\s+below|'
+    r'greater\s+than|less\s+than)\s+'
+    r'([\d]+(?:\.[0-9]+)?)\s*'
+    r'(PSI|BAR|L/MIN|M3/H|GPM|%|KPA|BARA|BARG|'
+    r'PSIG|PSIA|°C|°F|DEGC|DEGF|KW|MW|RPM|MM|M|CM)?',
+    re.IGNORECASE,
+)
+_TAG_RE_SIMPLE = re.compile(r'\b([A-Z]{1,3}-[0-9]{1,4}[A-Z]?)\b')
+
+
+def _scan_raw_text_for_conditions(
+    document_text: str,
+    setpoint_table: list[dict],
+) -> list[Finding]:
+    """
+    Scan every line of document_text for comparison + value patterns, then
+    look backward for the nearest ISA instrument tag.  Compares against
+    setpoint_table with a 3 % deviation threshold.
+
+    Strategy: find "exceeds/below/above ... VALUE UNIT" first, then pick the
+    nearest preceding ISA tag so we bind to the instrument (PT-101) not the
+    interlock label (IL-101) in lines like "Interlock IL-101 ... when PT-101
+    discharge pressure exceeds 150 PSI".
+    """
+    findings = []
+    table_by_tag: dict[str, list[dict]] = {}
+    for row in setpoint_table:
+        table_by_tag.setdefault(row["tag"].upper(), []).append(row)
+
+    current_page = 1
+    seen: set[tuple] = set()  # (tag, round(table_value,1))
+
+    for line in document_text.split("\n"):
+        pm = re.match(r"\[PAGE (\d+)\]", line.strip())
+        if pm:
+            current_page = int(pm.group(1))
+            continue
+
+        for m in _CMP_VALUE_RE.finditer(line):
+            comparison = m.group(1).lower()
+            prose_value = float(m.group(2))
+            prose_unit = (m.group(3) or "").upper()
+
+            # Find the nearest instrument tag PRECEDING this comparison
+            text_before = line[:m.start()]
+            tags_before = _TAG_RE_SIMPLE.findall(text_before)
+            if not tags_before:
+                continue
+
+            # Walk backward through tags, pick the first one in setpoint table
+            tag = None
+            for t in reversed(tags_before):
+                if t.upper() in table_by_tag:
+                    tag = t.upper()
+                    break
+            if tag is None:
+                continue
+
+            # Determine hi/lo from comparison operator
+            if any(x in comparison for x in ("exceed", "above", "greater")):
+                param = "hi"
+            else:
+                param = "lo"
+
+            # Find matching table row
+            table_rows = table_by_tag[tag]
+            table_row = _fuzzy_match_param(param, table_rows)
+            if table_row is None and len(table_rows) == 1:
+                table_row = table_rows[0]
+            if table_row is None:
+                continue
+
+            table_value = float(table_row.get("value", 0))
+            table_units = (table_row.get("units", "") or "").lower()
+            table_page = table_row.get("page", 0)
+
+            if table_value == 0 or prose_value == 0:
+                continue
+
+            dedup_key = (tag, round(table_value, 1))
+            if dedup_key in seen:
+                continue
+
+            deviation = abs(prose_value - table_value) / table_value
+            if deviation > 0.03:  # 3 % threshold — safety-critical values
+                seen.add(dedup_key)
+                severity = "CRITICAL" if deviation > 0.10 else "HIGH"
+                findings.append(_build_finding(
+                    finding_type="SETPOINT_MISMATCH",
+                    description=(
+                        f"Tag {tag}: prose says {prose_value} {prose_unit}, "
+                        f"setpoints table says {table_value} {table_units.upper()} "
+                        f"(deviation: {deviation*100:.1f}%)."
+                    ),
+                    severity=severity,
+                    section_title="",
+                    page_number=current_page,
+                    quote=line.strip()[:250],
+                    rule_violated="Internal consistency — setpoint values must match across document",
+                    rule_text=(
+                        "Every numerical setpoint must be identical wherever it appears: in "
+                        "interlock prose, alarm descriptions, startup sequences, and the "
+                        "setpoints table. Any discrepancy will propagate to incorrect PLC "
+                        "configuration."
+                    ),
+                    why_it_matters=(
+                        f"The PLC programmer sees {prose_value} {prose_unit} in the narrative "
+                        f"and {table_value} in the setpoints table. They must guess which is "
+                        f"correct. A wrong choice means the protective action fires too early "
+                        f"(nuisance trips) or too late (process hazard)."
+                    ),
+                    suggestion=(
+                        f"Reconcile {tag}: narrative (page {current_page}) says "
+                        f"{prose_value} {prose_unit}, setpoints table (page {table_page}) "
+                        f"says {table_value} {table_units}. Update both to the agreed "
+                        f"engineering value. Typical cause: table was updated but prose was not."
+                    ),
+                    evidence_source="Direct document text scan — backward-tag matching (deterministic, no LLM)",
+                ))
+
+    return findings
+
+# Canonical equivalence groups for fuzzy parameter matching
+_PARAM_GROUPS = [
+    {"trip", "hi", "high", "high_trip", "hi_trip", "hh_trip", "hi_hi_trip", "high_high_trip"},
+    {"hi_hi", "high_high", "hh", "high_high_alarm"},
+    {"lo", "low", "low_alarm", "lo_alarm", "lo_trip", "low_trip"},
+    {"lo_lo", "low_low", "ll", "lo_lo_trip", "low_low_trip"},
+    {"sp", "setpoint", "set_point", "normal", "working"},
+]
+
+
+def _fuzzy_match_param(index_param: str, table_rows: list[dict]) -> dict | None:
+    """Find the best-matching table row for an index parameter by equivalence group."""
+    norm_ip = _normalize_parameter(index_param)
+    matched_group = next((g for g in _PARAM_GROUPS if norm_ip in g), None)
+    if matched_group is None:
+        return None
+    for row in table_rows:
+        if _normalize_parameter(row.get("parameter", "")) in matched_group:
+            return row
+    return None
+
+
+def _check_setpoints_from_index(
+    setpoint_index: dict,
+    setpoint_table: list[dict],
+    document_text: str,
+    sections_pages: dict,
+) -> list[Finding]:
+    """
+    Deterministic CON2/CON3 detection.
+
+    Compares Pass 1 setpoint_index (values extracted from prose sentences) against
+    setpoint_table (values extracted from the structured setpoints table by pdfplumber).
+    No LLM dependency — pure Python arithmetic comparison.
+
+    setpoint_index: {tag: {param: {value, unit, page, text}}}
+    setpoint_table: [{tag, parameter, value, units, page}]
+    """
+    findings = []
+
+    # Build table lookup: exact (tag, normalized_param) → row
+    table_lookup: dict[tuple, dict] = {}
+    for row in setpoint_table:
+        key = (row["tag"].upper(), _normalize_parameter(row.get("parameter", "")))
+        table_lookup[key] = row
+
+    # Also group table rows by tag for fuzzy matching
+    table_by_tag: dict[str, list[dict]] = {}
+    for row in setpoint_table:
+        table_by_tag.setdefault(row["tag"].upper(), []).append(row)
+
+    # Track already-flagged (tag, table_value) pairs to avoid duplicate findings
+    flagged: set[tuple] = set()
+
+    for tag, params in setpoint_index.items():
+        if tag not in table_by_tag:
+            continue
+
+        table_rows = table_by_tag[tag]
+
+        for param, entry in params.items():
+            if param == "value":
+                continue  # too generic — skip
+
+            prose_value = float(entry.get("value", 0))
+            prose_unit  = (entry.get("unit", "") or "").upper()
+            prose_page  = entry.get("page", 0)
+            prose_text  = entry.get("text", "")
+
+            # Exact param match first, then fuzzy
+            table_row = table_lookup.get((tag, _normalize_parameter(param)))
+            if table_row is None:
+                table_row = _fuzzy_match_param(param, table_rows)
+            if table_row is None:
+                continue
+
+            table_value = float(table_row.get("value", 0))
+            table_units = (table_row.get("units", "") or "").lower()
+            table_page  = table_row.get("page", 0)
+
+            if table_value == 0 or prose_value == 0:
+                continue
+
+            # Skip if we already flagged this (tag, table_value) pair
+            dedup_key = (tag, table_value)
+            if dedup_key in flagged:
+                continue
+
+            deviation = abs(prose_value - table_value) / table_value
+            if deviation > 0.03:
+                flagged.add(dedup_key)
+                severity = "CRITICAL" if deviation > 0.10 else "HIGH"
+                findings.append(_build_finding(
+                    finding_type="SETPOINT_MISMATCH",
+                    description=(
+                        f"Tag {tag} '{param}' value contradicts itself: "
+                        f"prose says {prose_value} {prose_unit}, "
+                        f"setpoints table says {table_value} {table_units} "
+                        f"(deviation: {deviation*100:.1f}%)."
+                    ),
+                    severity=severity,
+                    section_title=entry.get("section", ""),
+                    page_number=prose_page,
+                    quote=prose_text[:200],
+                    rule_violated="Internal consistency — setpoint values must match across document",
+                    rule_text=(
+                        "Every numerical setpoint must be identical wherever it appears: in "
+                        "interlock prose, alarm descriptions, startup sequences, and the "
+                        "setpoints table. A >5% discrepancy indicates a document error, not "
+                        "a deliberate engineering choice."
+                    ),
+                    why_it_matters=(
+                        f"The PLC programmer has two different values for the same setpoint: "
+                        f"{prose_value} from the prose and {table_value} from the table. "
+                        f"If they use the wrong value, the protective action triggers too "
+                        f"early (nuisance trips) or too late (dangerous operation)."
+                    ),
+                    suggestion=(
+                        f"Decide the correct value for {tag} '{param}' and update all occurrences. "
+                        f"Prose (~page {prose_page}): {prose_value} {prose_unit}. "
+                        f"Setpoints Table (~page {table_page}): {table_value} {table_units}. "
+                        f"Typical cause: setpoints table was updated but narrative text was not (or vice versa)."
+                    ),
+                    evidence_source="Pass 1 document index + setpoint table (deterministic, no LLM)",
+                ))
+
+    return findings
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # CHECK 2 — Equipment type contradiction (same tag, different type in two sections)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -233,22 +488,28 @@ EQUIPMENT_TYPE_WORDS = re.compile(
 
 def _find_tag_mentions(sections: dict, document_text: str) -> dict[str, list[dict]]:
     """
-    Build {tag: [{section_title, text_around_tag, page}]} for tags appearing in >1 section.
+    Build {tag: [{section_title, text_around_tag, equipment_types}]} for tags
+    appearing in >1 section.  Uses a 4-line sliding window so table-formatted
+    equipment lists (tag on one line, type word on the next) are captured.
     """
     tag_mentions: dict[str, list[dict]] = {}
     for section_title, section_text in sections.items():
         tags_in_section = set(ISA_TAG_RE.findall(section_text))
+        lines = section_text.split("\n")
         for tag in tags_in_section:
-            # Find the sentence containing this tag
-            for sentence in re.split(r"[.\n]", section_text):
-                if tag in sentence and len(sentence.strip()) > 10:
-                    record = {
+            for i, line in enumerate(lines):
+                if tag in line:
+                    # 4-line window: captures inline descriptions AND table rows
+                    # e.g. "XV-201\nMain discharge valve\nBall valve" (table)
+                    # or "Open the gate valve XV-201 to allow flow" (prose)
+                    window = "\n".join(lines[max(0, i - 1): i + 4])
+                    equip_types = EQUIPMENT_TYPE_WORDS.findall(window)
+                    tag_mentions.setdefault(tag, []).append({
                         "section_title": section_title,
-                        "sentence": sentence.strip(),
-                        "equipment_types": EQUIPMENT_TYPE_WORDS.findall(sentence),
-                    }
-                    tag_mentions.setdefault(tag, []).append(record)
-                    break  # one excerpt per section per tag
+                        "sentence": window.strip()[:200],
+                        "equipment_types": equip_types,
+                    })
+                    break  # first occurrence per section per tag
 
     return {t: v for t, v in tag_mentions.items() if len(v) > 1}
 
@@ -510,14 +771,31 @@ def run_consistency_agent(state: dict) -> dict:
     config = load_config()
     llm = OllamaLLM(model=config["model"]["name"], temperature=0.1)
 
-    sections: dict = state["sections"]
+    sections: dict      = state["sections"]
     sections_pages: dict = state.get("sections_pages", {})
     setpoint_table: list = state.get("setpoint_table", [])
-    document_text: str = state["document_text"]
+    setpoint_index: dict = state.get("setpoint_index", {})
+    document_text: str  = state["document_text"]
 
     all_findings: list[Finding] = []
 
-    all_findings.extend(check_setpoint_consistency(sections, setpoint_table, document_text, llm, sections_pages))
+    # CON2/CON3: raw text scan — deterministic, no index or LLM dependency.
+    # Scans every line in document_text so it catches values even when they
+    # ended up in section titles rather than section text.
+    all_findings.extend(_scan_raw_text_for_conditions(document_text, setpoint_table))
+
+    # CON2/CON3 supplement: index-based check adds any setpoints the raw scan missed
+    # (e.g. values stated without explicit comparison operators like "exceeds")
+    if setpoint_index:
+        raw_dedup = {(f.description.split(":")[0].split()[-1], ) for f in all_findings
+                     if f.finding_type == "SETPOINT_MISMATCH"}
+        for f in _check_setpoints_from_index(
+            setpoint_index, setpoint_table, document_text, sections_pages
+        ):
+            tag_in_desc = f.description.split(":")[0].split()[-1]
+            if (tag_in_desc, ) not in raw_dedup:
+                all_findings.append(f)
+
     all_findings.extend(check_equipment_type_consistency(sections, document_text, llm, sections_pages))
     all_findings.extend(check_sequence_contradictions(sections, document_text, llm, sections_pages))
 
