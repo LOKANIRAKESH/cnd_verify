@@ -1,0 +1,66 @@
+# CND-Verify Configuration
+# Edit these values to change system behaviour
+
+model:
+  name: llama3.1          # Ollama model name — run: ollama pull llama3.1
+  temperature: 0          # 0 = deterministic, more consistent findings
+  timeout_seconds: 120    # Max wait per LLM call
+
+chromadb:
+  path: ./chroma_db                    # Local folder — created automatically
+  collection_name: domain_knowledge_base
+
+embeddings:
+  model: all-MiniLM-L6-v2             # Downloaded automatically on first run (~90MB)
+  chunk_size: 256                      # Tokens per domain KB chunk
+  chunk_overlap: 32                    # Token overlap between chunks
+  retrieval_top_k: 3                   # How many KB chunks to retrieve per query
+  min_similarity: 0.45                 # Below this → no finding generated
+
+scoring:
+  weights:
+    completeness: 0.35    # Highest weight — missing info blocks PLC coding
+    consistency: 0.35     # Highest weight — contradictions cause wrong code
+    ambiguity: 0.30       # Lower — vague but codable
+
+  thresholds:
+    pass: 0.85            # VQS >= 0.85 → AUTO PASS
+    review: 0.65          # VQS 0.65-0.84 → NEEDS REVIEW
+                          # VQS < 0.65 → FAIL
+
+  penalty_per_finding:
+    CRITICAL: 0.20        # Each CRITICAL finding reduces score by 20%
+    HIGH: 0.10
+    WARNING: 0.03
+    INFO: 0.01
+
+document:
+  min_text_chars: 50      # Pages with fewer chars treated as scanned
+  tag_pattern: "[A-Z]{1,3}-[0-9]{1,4}[A-Z]?"   # ISA-5.1 tag regex
+
+required_sections:
+  - General Description
+  - Equipment List
+  - Operating Modes
+  - Startup Sequence
+  - Normal Operation
+  - Shutdown Sequence
+  - Emergency Shutdown
+  - Interlocks
+  - Alarms
+  - Setpoints
+
+required_interlock_fields:
+  - cause
+  - action
+  - reset_condition
+  - reset_method
+  - priority
+
+required_alarm_fields:
+  - tag
+  - alarm_type
+  - setpoint_value
+  - units
+  - priority
+  - operator_response

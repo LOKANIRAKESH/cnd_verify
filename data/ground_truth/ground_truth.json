@@ -1,0 +1,160 @@
+{
+  "dataset_info": {
+    "name": "CND-Verify Synthetic Pump Station Dataset",
+    "version": "1.0",
+    "created": "2024-01-01",
+    "description": "Ground truth labels for synthetic Control Narrative Documents with injected errors",
+    "total_documents": 3,
+    "total_errors": 10
+  },
+  "documents": [
+    {
+      "doc_id": "PS-01",
+      "filename": "pump_station_01_clean.txt",
+      "description": "Clean pump station CND — no errors. Gold standard document.",
+      "error_count": 0,
+      "errors": []
+    },
+    {
+      "doc_id": "PS-02",
+      "filename": "pump_station_02_completeness_errors.txt",
+      "description": "Pump station CND with 6 injected completeness errors",
+      "error_count": 6,
+      "errors": [
+        {
+          "error_id": "PS02-C1",
+          "type": "MISSING_SECTION",
+          "agent": "completeness",
+          "severity": "CRITICAL",
+          "location": "Section 3 — Operating Modes",
+          "page_approx": 3,
+          "description": "Emergency Shutdown section is completely absent from this document",
+          "expected": "A dedicated Emergency Shutdown section describing ESD triggers, automatic actions, and manual reset procedure",
+          "injected_by": "Deleted entire Section 3.6 that exists in pump_station_01_clean.txt"
+        },
+        {
+          "error_id": "PS02-C2",
+          "type": "MISSING_SECTION",
+          "agent": "completeness",
+          "severity": "CRITICAL",
+          "location": "Section 3 — Operating Modes",
+          "page_approx": 3,
+          "description": "Startup Sequence section is completely absent",
+          "expected": "A dedicated Startup Sequence section with step-by-step procedures, permissives, and confirmation conditions",
+          "injected_by": "Deleted entire Section 8 (Startup Sequence) that exists in pump_station_01_clean.txt"
+        },
+        {
+          "error_id": "PS02-C3",
+          "type": "MISSING_INTERLOCK_FIELD",
+          "agent": "completeness",
+          "severity": "CRITICAL",
+          "location": "Section 6.1 — Interlock IL-201",
+          "page_approx": 5,
+          "description": "Interlock IL-201 is missing the Reset Condition field",
+          "expected": "A defined condition that must be satisfied before the interlock can be reset (e.g., 'PT-201 below 130 PSI AND cause investigated')",
+          "injected_by": "Removed Reset Condition line from Interlock IL-201"
+        },
+        {
+          "error_id": "PS02-C4",
+          "type": "MISSING_INTERLOCK_FIELD",
+          "agent": "completeness",
+          "severity": "CRITICAL",
+          "location": "Section 6.1 — Interlock IL-201",
+          "page_approx": 5,
+          "description": "Interlock IL-201 is missing the Reset Method field (manual or automatic)",
+          "expected": "Explicit statement of whether reset is manual (operator action) or automatic (self-resetting)",
+          "injected_by": "Removed Reset Method line from Interlock IL-201"
+        },
+        {
+          "error_id": "PS02-C5",
+          "type": "MISSING_INTERLOCK_FIELD",
+          "agent": "completeness",
+          "severity": "CRITICAL",
+          "location": "Section 6.3 — Interlock IL-203",
+          "page_approx": 5,
+          "description": "Interlock IL-203 is missing the Action field — interlock has a cause but no defined protective action",
+          "expected": "Specific action to take when FT-301 low-low flow is detected (e.g., 'Stop pump P-201, open alarm')",
+          "injected_by": "Removed Action field from Interlock IL-203"
+        },
+        {
+          "error_id": "PS02-C6",
+          "type": "MISSING_ALARM_FIELD",
+          "agent": "completeness",
+          "severity": "HIGH",
+          "location": "Section 7.1 — PT-201 High Pressure Alarm",
+          "page_approx": 6,
+          "description": "Alarm PT-201-H is missing the Priority field",
+          "expected": "Priority 1, 2, 3, or 4 per ISA-18.2 alarm prioritization scheme",
+          "injected_by": "Removed Priority line from alarm PT-201-H definition"
+        }
+      ]
+    },
+    {
+      "doc_id": "PS-03",
+      "filename": "pump_station_03_consistency_errors.txt",
+      "description": "Pump station CND with 4 injected consistency errors",
+      "error_count": 4,
+      "errors": [
+        {
+          "error_id": "PS03-CON1",
+          "type": "SETPOINT_MISMATCH",
+          "agent": "consistency",
+          "severity": "CRITICAL",
+          "location_prose": "Section 6.1 — Interlock IL-301, Cause description",
+          "location_table": "Section 5 — Setpoints Table, PT-301 HH Trip row",
+          "page_prose": 5,
+          "page_table": 4,
+          "description": "PT-301 High High pressure trip setpoint mismatch between prose and table",
+          "prose_value": "150 PSI",
+          "table_value": "145 PSI",
+          "difference_psi": 5,
+          "difference_percent": 3.33,
+          "injected_by": "Changed prose value in IL-301 from 145 to 150 while keeping table at 145"
+        },
+        {
+          "error_id": "PS03-CON2",
+          "type": "SETPOINT_MISMATCH",
+          "agent": "consistency",
+          "severity": "HIGH",
+          "location_prose": "Section 7.2 — FT-401 Low Flow Alarm, Setpoint field",
+          "location_table": "Section 5 — Setpoints Table, FT-401 Normal Low row",
+          "page_prose": 6,
+          "page_table": 4,
+          "description": "FT-401 Low flow alarm setpoint mismatch between prose and table",
+          "prose_value": "20 L/min",
+          "table_value": "25 L/min",
+          "difference_lmin": 5,
+          "difference_percent": 20.0,
+          "injected_by": "Changed prose alarm setpoint from 25 to 20 while keeping table at 25"
+        },
+        {
+          "error_id": "PS03-CON3",
+          "type": "EQUIPMENT_TYPE_CONTRADICTION",
+          "agent": "consistency",
+          "severity": "HIGH",
+          "location_section2": "Section 2.2 — Valves, XV-301 description",
+          "location_section8": "Section 8 — Startup Sequence, Step 3",
+          "page_section2": 2,
+          "page_section8": 7,
+          "description": "XV-301 described as ball valve in equipment list but as gate valve in startup sequence",
+          "section2_text": "Type: Ball valve, pneumatically actuated, 6-inch NB",
+          "section8_text": "Open suction valve XV-301 (gate valve) fully",
+          "injected_by": "Changed valve type in startup sequence step from 'ball valve' to 'gate valve'"
+        },
+        {
+          "error_id": "PS03-CON4",
+          "type": "SEQUENCE_CONTRADICTION",
+          "agent": "consistency",
+          "severity": "CRITICAL",
+          "location_step5": "Section 9 — Shutdown Sequence, Step 5",
+          "location_step6": "Section 9 — Shutdown Sequence, Step 6",
+          "page": 8,
+          "description": "Shutdown sequence has contradictory ordering — Step 5 says stop P-301 BEFORE closing XV-301, but Step 6 says close XV-302 BEFORE stopping P-301",
+          "step5_text": "P-301 must be fully stopped before closing XV-301",
+          "step6_text": "Close XV-302 before stopping P-301 motor completely",
+          "injected_by": "Added contradictory instruction in Step 6 that conflicts with Step 5 ordering"
+        }
+      ]
+    }
+  ]
+}

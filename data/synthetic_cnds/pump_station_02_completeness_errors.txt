@@ -1,0 +1,249 @@
+CONTROL NARRATIVE DOCUMENT
+PUMP STATION PS-02 — WATER TRANSFER SYSTEM
+Document Number: CND-PS02-001
+Revision: A
+Status: FOR REVIEW
+Prepared by: Process Engineering
+Date: 2024-02-10
+
+NOTE FOR RESEARCHERS: This document contains 6 deliberately injected COMPLETENESS errors.
+See ground_truth.json for error labels. This document is used for evaluation of the Completeness Agent.
+
+================================================================================
+SECTION 1: GENERAL DESCRIPTION
+================================================================================
+
+1.1 PURPOSE
+
+This document describes the control philosophy and operating requirements for Pump
+Station PS-02, a water transfer system designed to move process water from Storage
+Tank TK-201 to the Distribution Header DH-002.
+
+1.2 SYSTEM DESCRIPTION
+
+The pump station consists of two centrifugal pumps (P-201 as duty pump and P-202
+as standby pump), associated valves, and instrumentation for pressure, flow, level,
+and temperature monitoring. The system is controlled by a PLC-based BPCS.
+
+1.3 DESIGN BASIS
+
+Design flow rate: 120 litres per minute (L/min)
+Design pressure: 180 PSI maximum
+Operating pressure range: 70 to 140 PSI
+Storage tank capacity: 40,000 litres
+
+================================================================================
+SECTION 2: EQUIPMENT LIST
+================================================================================
+
+2.1 PUMPS
+
+P-201 — Duty Pump
+  Type: Centrifugal pump, horizontal
+  Rated flow: 120 L/min at 110 PSI
+  Motor: 11 kW, 415V, 3-phase
+
+P-202 — Standby Pump
+  Type: Centrifugal pump, horizontal
+  Rated flow: 120 L/min at 110 PSI
+  Motor: 11 kW, 415V, 3-phase
+
+2.2 VALVES
+
+XV-201A — Suction Isolation Valve (P-201)
+  Type: Ball valve, pneumatically actuated, 6-inch NB
+  Fail position: Fail-Open
+
+XV-202A — Suction Isolation Valve (P-202)
+  Type: Ball valve, pneumatically actuated, 6-inch NB
+  Fail position: Fail-Open
+
+XV-201B — Discharge Isolation Valve (P-201)
+  Type: Ball valve, pneumatically actuated, 6-inch NB
+  Fail position: Fail-Closed
+
+FV-401 — Flow Control Valve
+  Type: Globe valve, pneumatically actuated, modulating, 4-inch NB
+  Fail position: Fail-Closed
+
+2.3 INSTRUMENTS
+
+PT-201 — Discharge Pressure Transmitter
+  Range: 0 to 200 PSI
+  Output: 4-20 mA
+
+FT-301 — Process Flow Transmitter
+  Range: 0 to 250 L/min
+  Output: 4-20 mA
+
+LT-401 — Storage Tank Level Transmitter
+  Range: 0 to 100%
+  Output: 4-20 mA
+
+TT-501 — Pump Motor Temperature Transmitter
+  Range: 0 to 150 degrees Celsius
+  Output: 4-20 mA
+
+2.4 CONTROLLERS
+
+FIC-301 — Flow Indicating Controller
+  Setpoint: 100 L/min
+
+================================================================================
+SECTION 3: OPERATING MODES
+================================================================================
+
+3.1 STOPPED MODE
+
+Entry conditions: Normal shutdown completed or ESD triggered
+Actions: All pumps stopped, all valves closed
+
+3.2 RUNNING MODE (Normal Operation)
+
+Description: System operating normally.
+Normal operating ranges:
+  Discharge pressure: 70 to 140 PSI
+  Flow: 80 to 120 L/min
+  Tank level: 25% to 85%
+
+[ERROR C1 - MISSING SECTION: Emergency Shutdown section is completely absent from this document]
+[ERROR C2 - MISSING SECTION: Startup Sequence section is completely absent from this document]
+
+================================================================================
+SECTION 4: CONTROL LOOPS
+================================================================================
+
+4.1 FLOW CONTROL LOOP — FIC-301
+
+Sensor: FT-301
+Controller: FIC-301
+Final element: FV-401
+Setpoint: 100 L/min
+
+================================================================================
+SECTION 5: SETPOINTS TABLE
+================================================================================
+
+TAG       | PARAMETER          | VALUE | UNITS   | DESCRIPTION
+----------|-------------------|-------|---------|----------------------------------
+PT-201    | Normal High        | 140   | PSI     | High pressure alarm setpoint
+PT-201    | HH Trip            | 160   | PSI     | High High pressure trip
+PT-201    | Normal Low         | 50    | PSI     | Low pressure alarm setpoint
+FT-301    | Normal Low         | 15    | L/min   | Low flow alarm setpoint
+FT-301    | LL Trip            | 8     | L/min   | Low Low flow trip
+FT-301    | Control Setpoint   | 100   | L/min   | Flow controller target
+LT-401    | Normal Low         | 25    | %       | Low level alarm setpoint
+LT-401    | LL Trip            | 15    | %       | Low Low level trip
+TT-501    | Normal High        | 75    | Celsius | High motor temperature alarm
+TT-501    | HH Trip            | 90    | Celsius | High High motor temperature trip
+
+================================================================================
+SECTION 6: INTERLOCKS
+================================================================================
+
+6.1 INTERLOCK IL-201 — HIGH-HIGH DISCHARGE PRESSURE TRIP
+
+Cause:        PT-201 discharge pressure exceeds 160 PSI for more than 3 seconds
+Action:       Stop pump P-201, close discharge valve XV-201B
+              Open alarm on HMI: "HIGH-HIGH DISCHARGE PRESSURE"
+[ERROR C3 - MISSING FIELD: Reset Condition is absent — programmer does not know when pump can restart]
+[ERROR C4 - MISSING FIELD: Reset Method is absent — manual or auto reset is not specified]
+Priority:     Safety Critical
+
+6.2 INTERLOCK IL-202 — LOW-LOW TANK LEVEL TRIP
+
+Cause:        LT-401 storage tank level falls below 15%
+Action:       Stop pump P-201 to prevent dry running
+              Open alarm: "LOW-LOW TANK LEVEL"
+Reset Condition: LT-401 level rises above 25% AND operator confirms tank is adequate
+Reset Method: Manual reset required
+Priority:     Safety Critical
+
+6.3 INTERLOCK IL-203 — LOW-LOW FLOW TRIP
+
+Cause:        FT-301 flow below 8 L/min for more than 10 seconds while P-201 running
+[ERROR C5 - MISSING FIELD: Action is absent — interlock has a cause but no defined action]
+Reset Condition: FT-301 flow above 25 L/min and downstream valves confirmed open
+Reset Method: Manual reset required
+Priority:     Safety Critical
+
+6.4 INTERLOCK IL-204 — HIGH-HIGH MOTOR TEMPERATURE TRIP
+
+Cause:        TT-501 motor temperature exceeds 90 degrees Celsius
+Action:       Stop pump P-201 immediately
+              Open alarm: "HIGH-HIGH MOTOR TEMPERATURE"
+Reset Condition: TT-501 temperature falls below 70 degrees Celsius
+Reset Method: Manual reset required
+Priority:     Safety Critical
+
+================================================================================
+SECTION 7: ALARMS
+================================================================================
+
+7.1 PT-201 — HIGH DISCHARGE PRESSURE ALARM
+
+Tag:              PT-201-H
+Alarm Type:       High (H)
+Setpoint:         120 PSI
+Units:            PSI
+[ERROR C6 - MISSING FIELD: Priority is absent — HMI cannot configure alarm annunciation]
+Operator Response: Investigate elevated pressure. Check FV-401 and downstream valves.
+Probable Cause:   Downstream restriction
+
+7.2 PT-201 — HIGH-HIGH DISCHARGE PRESSURE ALARM
+
+Tag:              PT-201-HH
+Alarm Type:       High High (HH)
+Setpoint:         160 PSI
+Units:            PSI
+Priority:         Priority 1 (CRITICAL)
+Operator Response: IMMEDIATE ACTION. Interlock IL-201 will trip pump. Acknowledge and investigate.
+Probable Cause:   Complete downstream blockage
+
+7.3 FT-301 — LOW FLOW ALARM
+
+Tag:              FT-301-L
+Alarm Type:       Low (L)
+Setpoint:         15 L/min
+Units:            L/min
+Priority:         Priority 2 (HIGH)
+Operator Response: Check FV-401 operation. Check for blockage.
+Probable Cause:   FV-401 not opening, downstream blockage
+
+7.4 LT-401 — LOW TANK LEVEL ALARM
+
+Tag:              LT-401-L
+Alarm Type:       Low (L)
+Setpoint:         25 %
+Units:            %
+Priority:         Priority 2 (HIGH)
+Operator Response: Contact supply team for tank refill. Reduce flow rate to conserve water.
+Probable Cause:   Insufficient inlet supply
+
+7.5 TT-501 — HIGH MOTOR TEMPERATURE ALARM
+
+Tag:              TT-501-H
+Alarm Type:       High (H)
+Setpoint:         75 degrees Celsius
+Units:            Celsius
+Priority:         Priority 2 (HIGH)
+Operator Response: Check motor cooling. Reduce pump load. Monitor closely.
+Probable Cause:   Cooling fan failure, motor overload
+
+================================================================================
+SECTION 9: SHUTDOWN SEQUENCE
+================================================================================
+
+Normal shutdown:
+  Step 1: Select STOP on HMI
+  Step 2: Ramp FV-401 to closed over 30 seconds
+  Step 3: Stop pump P-201
+  Step 4: Close XV-201B
+  Step 5: Close XV-201A
+  Step 6: System in STOPPED mode
+
+================================================================================
+SECTION 10: REVISION HISTORY
+================================================================================
+
+Rev A: Initial issue — 2024-02-10

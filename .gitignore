@@ -1,0 +1,23 @@
+# Virtual environments — never commit these
+venv/
+.venv/
+env/
+.env/
+Scripts/
+Lib/
+Include/
+pyvenv.cfg
+
+# Generated at runtime — do not commit
+chroma_db/
+output/
+__pycache__/
+*.pyc
+*.pyo
+.env
+temp_upload_*
+
+# Large model files
+*.bin
+*.pt
+*.onnx

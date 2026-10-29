@@ -1,0 +1,139 @@
+# ISA-18.2 ALARM MANAGEMENT — DOMAIN KNOWLEDGE
+# Source: ISA-18.2-2016 Management of Alarm Systems for the Process Industries
+# Source: EEMUA Publication 191 — Alarm Systems: A Guide to Design, Management and Procurement
+# Source: Seborg, Edgar, Mellichamp — Process Dynamics and Control (4th Ed), Chapter 10
+# Use these definitions to verify alarm sections in Control Narrative Documents
+
+================================================================================
+SECTION 1: REQUIRED ALARM FIELDS
+================================================================================
+
+Every alarm defined in a Control Narrative Document MUST contain ALL of the following:
+
+FIELD 1 — TAG IDENTIFIER
+  Definition: The ISA-5.1 instrument tag for the alarm (e.g., PT-101-HH, FT-201-L)
+  Format: [Instrument Tag]-[Alarm Type Suffix]
+  Suffixes: HH (High High), H (High), L (Low), LL (Low Low), D (Deviation), R (Rate of change)
+  Violation: Alarm with no tag assigned cannot be mapped to a sensor in the PLC
+
+FIELD 2 — ALARM TYPE
+  Definition: Classification of the alarm level
+  Valid types:
+    HH (High High): Most severe high-direction alarm — typically trips equipment
+    H (High): Warning of high condition — operator attention required
+    L (Low): Warning of low condition — operator attention required
+    LL (Low Low): Most severe low-direction alarm — typically trips equipment
+    DEV (Deviation): Process variable has deviated from setpoint by defined amount
+    RATE (Rate): Process variable is changing too rapidly
+  Violation: Alarm with no type cannot be prioritized correctly
+
+FIELD 3 — SETPOINT VALUE
+  Definition: The numerical threshold at which the alarm activates
+  Requirement: Must be a specific number with units (e.g., 150 PSI, 85 degrees C, 20 L/min)
+  Violation: Setpoint described as "high" or "excessive" without a number cannot be programmed
+
+FIELD 4 — ENGINEERING UNITS
+  Definition: The unit of measurement for the setpoint value
+  Common units: PSI, bar, kPa (pressure); degrees C, degrees F (temperature); L/min, m3/h (flow); % (level)
+  Violation: Value without units is ambiguous (150 PSI vs 150 bar is a 10x difference)
+
+FIELD 5 — PRIORITY
+  Definition: Urgency classification per ISA-18.2
+  Priority 1 — CRITICAL: Immediate action required, safety or major equipment risk, operator must respond within 1 minute
+  Priority 2 — HIGH: Urgent action required within 10 minutes, significant process impact
+  Priority 3 — MEDIUM: Action required within 30 minutes, process degradation
+  Priority 4 — LOW: Informational, action not immediately required
+  Violation: Alarm with no priority cannot be properly annunciated or filtered by operators
+
+FIELD 6 — OPERATOR RESPONSE
+  Definition: Specific action the operator must take when this alarm activates
+  Requirement: Must describe exactly what the operator should do (not what will happen automatically)
+  Good example: "Stop pump P-101 manually and check for downstream blockage. Contact maintenance if pressure does not drop within 5 minutes."
+  Bad example: "Check the pump" (too vague — not actionable)
+  Bad example: "System will shutdown automatically" (describes automatic action, not operator action)
+  Violation: Missing operator response means operator does not know what to do
+
+FIELD 7 — PROBABLE CAUSE (Recommended, not always mandatory)
+  Definition: The most likely reason this alarm activated
+  Purpose: Helps operator diagnose the problem quickly
+  Example: "High pressure alarm on PT-101 — probable cause: downstream valve XV-201 partially closed or blocked"
+
+================================================================================
+SECTION 2: ALARM PRIORITY RULES
+================================================================================
+
+RULE P1: Priority 1 alarms must have a response time defined
+  A Priority 1 alarm must specify how quickly the operator must respond
+  Example: "Operator must acknowledge and take action within 60 seconds"
+
+RULE P2: Alarm setpoints must respect the priority hierarchy
+  For the same instrument, setpoints must be ordered correctly:
+  LL setpoint < L setpoint < Normal operating range < H setpoint < HH setpoint
+  Violation: HH setpoint lower than H setpoint is a logical error
+
+RULE P3: Setpoints must have deadband (hysteresis) defined for chattering alarms
+  Definition: Deadband prevents alarm from repeatedly activating/deactivating at the threshold
+  Example: Alarm activates at 150 PSI, de-activates at 145 PSI (5 PSI deadband)
+  Violation: No deadband on a rapidly fluctuating measurement causes alarm flooding
+
+RULE P4: Safety critical alarms must require manual acknowledgement
+  Alarms that trip equipment or indicate safety hazards should require operator to manually acknowledge
+  Auto-clearing alarms on safety instruments reduce operator awareness
+
+RULE P5: Total active alarms should not exceed 10 per 10-minute period
+  More than 10 alarms in 10 minutes is defined as an "alarm flood" by ISA-18.2
+  Alarm floods cause operators to ignore or silence alarms
+
+================================================================================
+SECTION 3: COMMON ALARM VIOLATIONS IN CONTROL NARRATIVES
+================================================================================
+
+VIOLATION TYPE 1 — MISSING PRIORITY
+  Symptom: Alarm described with no priority number assigned
+  Impact: HMI cannot configure alarm annunciation correctly
+  Detection keyword: alarm description without Priority 1/2/3/4 or Critical/High/Medium/Low
+
+VIOLATION TYPE 2 — VAGUE OPERATOR RESPONSE
+  Symptom: Response says "investigate" or "check the process" with no specific action
+  Impact: Operator does not know what to do — may take wrong action
+  Detection keywords: "investigate", "check", "monitor" without specific instructions
+
+VIOLATION TYPE 3 — MISSING SETPOINT VALUE
+  Symptom: Alarm described as activating on "high temperature" without a number
+  Impact: PLC programmer cannot set the alarm trip point
+  Detection pattern: alarm description with no number following it
+
+VIOLATION TYPE 4 — SETPOINT HIERARCHY VIOLATION
+  Symptom: Low alarm setpoint higher than normal operating range
+  Impact: Alarm activates during normal operation — nuisance alarm
+  Detection: numerical comparison of L, LL, H, HH setpoints for same instrument
+
+VIOLATION TYPE 5 — DUPLICATE ALARMS
+  Symptom: Same condition triggers multiple alarms at the same priority
+  Impact: Operator sees same alarm twice — confusion during emergency
+  Detection: two alarm entries with same tag and same condition
+
+================================================================================
+SECTION 4: ALARM RATIONALIZATION REQUIREMENTS
+================================================================================
+
+Each alarm must be rationalized — justified as necessary. An alarm is justified only if:
+1. The condition requires operator action (not just monitoring)
+2. The operator has enough time to respond
+3. The operator knows what action to take
+4. The alarm cannot be replaced by automatic control
+
+Alarms that do NOT meet this test should be removed from the CND.
+An alarm that is "nice to know" but requires no action is a nuisance alarm.
+
+================================================================================
+SECTION 5: CAUSE AND EFFECT MATRIX
+================================================================================
+
+Definition: A table showing which process conditions (causes) trigger which automatic actions (effects)
+Format: Rows = causes (instrument trip conditions), Columns = effects (valve positions, pump states)
+Cell values: X = action taken, blank = no action
+
+Required in CND: Every interlock action defined in the narrative should appear in the C&E matrix
+Violation: Interlock described in narrative text but missing from C&E matrix = inconsistency
+Violation: C&E matrix shows action not described anywhere in narrative text = undocumented action

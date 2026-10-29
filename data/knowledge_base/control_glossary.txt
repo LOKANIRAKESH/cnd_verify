@@ -1,0 +1,241 @@
+# CONTROL ENGINEERING GLOSSARY — DOMAIN KNOWLEDGE
+# Source: ISA Automation Federation published glossaries (publicly available)
+# Source: Instrument Society of America — Process Control Terminology
+# Source: Seborg, Edgar, Mellichamp — Process Dynamics and Control (4th Ed)
+# Source: Bela Liptak — Instrument Engineers Handbook
+# Use these definitions to verify terminology usage in Control Narrative Documents
+
+================================================================================
+SECTION 1: CORE CONTROL TERMS
+================================================================================
+
+ALARM
+  Definition: A signal that alerts an operator to an abnormal condition requiring attention or action.
+  Types: High (H), High High (HH), Low (L), Low Low (LL), Deviation (DEV)
+  CND requirement: Every alarm must have a defined setpoint, priority, and operator response.
+  Wrong usage: "Alarm will sound if temperature is too high" — no number, no priority
+
+AUTOMATIC CONTROL
+  Definition: Control loop where the controller automatically adjusts the output without operator intervention.
+  Opposite of: Manual control
+  CND usage: "PIC-101 will automatically adjust PV-101 to maintain pressure at 100 PSI setpoint"
+
+BPCS (Basic Process Control System)
+  Definition: The normal control system (DCS or PLC) that performs routine process control.
+  Distinct from: SIS (Safety Instrumented System) — separate hardware, separate logic
+  CND requirement: Must clearly state which actions are BPCS and which are SIS
+
+CAUSE AND EFFECT MATRIX (C&E Matrix)
+  Definition: Table listing which input conditions (causes) trigger which output actions (effects).
+  Format: Rows = input conditions, Columns = output actions, X = action triggered
+  CND requirement: Every interlock defined in narrative should appear in C&E matrix.
+
+CONTROL LOOP
+  Definition: A feedback system where a sensor measures a variable, a controller computes correction, and an actuator makes the correction.
+  Components: Sensor (transmitter) → Controller → Final control element (valve)
+  Example: PT-101 measures pressure → PIC-101 computes valve position → PV-101 adjusts opening
+
+CONTROLLER
+  Definition: Device or function that automatically adjusts an output to keep a measured variable at its setpoint.
+  Types: PID (Proportional-Integral-Derivative) is most common in process control
+  CND requirement: Controller setpoint, auto/manual mode, and output limits must be defined
+
+DEADBAND
+  Definition: A range around a setpoint within which no control action is taken, to prevent hunting.
+  Also called: Hysteresis
+  Purpose: Prevents valve from constantly moving when process variable is near setpoint
+  CND usage: "Alarm activates at 150 PSI, clears at 145 PSI (5 PSI deadband)"
+
+FAIL-SAFE
+  Definition: Behaviour of an instrument or valve when it loses power or signal.
+  Valve types: Fail-Open (FO), Fail-Closed (FC), Fail-Last Position (FL)
+  CND requirement: Every automated valve must have its fail-safe position defined.
+  Safety rule: Valves on pump suction typically Fail-Open; valves that could isolate supply Fail-Closed
+
+FEEDBACK CONTROL
+  Definition: Control where the measured output is compared to the desired setpoint and correction is applied.
+  Most common: PID control
+
+FINAL CONTROL ELEMENT
+  Definition: The device that actually changes the process — usually a control valve or variable speed pump.
+
+HARDWIRED INTERLOCK
+  Definition: Safety interlock implemented directly in electrical wiring — not in software.
+  Advantage: Cannot be overridden by software; faster response time
+  Distinction: Hardwired interlocks are in SIS; software interlocks are in BPCS
+
+HYSTERESIS
+  Definition: Difference between the activation and deactivation threshold of a switch or alarm.
+  Purpose: Prevents chattering (rapid cycling) near the threshold
+  Same concept as: Deadband
+
+INTERLOCK
+  Definition: A safety or process protection rule: IF [condition] THEN [action].
+  Types: Safety interlock (protects personnel and equipment), Process interlock (protects product quality)
+  CND requirement: Every interlock must have cause, action, reset condition, reset method, and priority.
+  Wrong usage: "Pump stops if pressure is high" — missing reset condition, no numerical value
+
+LATCH (LATCHING)
+  Definition: An interlock condition that remains active (locked) even after the triggering condition clears.
+  Requires: Manual reset by operator to clear the latched state
+  Opposite of: Self-resetting interlock
+  CND usage: "The high-high pressure interlock latches — operator must manually reset after the cause has been investigated"
+  Safety note: Safety interlocks should generally latch to ensure operator investigates before restart
+
+MANUAL RESET
+  Definition: An interlock or alarm that can only be cleared by a deliberate operator action.
+  Opposite: Auto-reset (clears automatically when condition returns to normal)
+  Safety rule: Safety interlocks should require manual reset; process interlocks may auto-reset
+
+MODULATING VALVE
+  Definition: Control valve that can be positioned anywhere from fully closed (0%) to fully open (100%).
+  Used for: Flow control, pressure control, temperature control
+  Tag prefixes: FV, PV, TV
+  Opposite: On/Off valve (XV tag) — either fully open or fully closed
+
+NORMAL STATE
+  Definition: The state of a valve, switch, or relay when it is de-energised (no power) and no process condition is active.
+  Normally Open (NO): Contact closed when energised, open when de-energised
+  Normally Closed (NC): Contact open when energised, closed when de-energised
+  CND requirement: All valves must have their normal state (NO or NC) defined
+
+ON/OFF VALVE
+  Definition: Valve that is either fully open or fully closed — no intermediate positions.
+  Tag prefix: XV
+  Actuator types: Solenoid, pneumatic with solenoid
+  CND requirement: Initial state (open or closed on startup) must be defined
+
+PERMISSIVE
+  Definition: A condition that must be satisfied before an action is permitted to occur.
+  Example: "Pump P-101 can only start if suction valve XV-101 is fully open" — XV-101 open is a permissive for P-101
+  CND requirement: All startup permissives must be listed
+
+PROCESS VARIABLE (PV)
+  Definition: The measured value of the variable being controlled (e.g., actual pressure reading from PT-101).
+  Compared to: Setpoint (SP) — the desired value
+
+SETPOINT (SP)
+  Definition: The desired value for the controlled variable.
+  CND requirement: Every setpoint must have a numerical value and unit of measurement.
+
+SHUTDOWN
+  Definition: Bringing the process or equipment to a safe, stopped state.
+  Types: Normal shutdown (orderly, planned), Emergency shutdown (ESD — immediate, safety-driven)
+  CND requirement: Both normal and emergency shutdown sequences must be defined separately.
+
+SIL (Safety Integrity Level)
+  Definition: A discrete level for defining safety requirements of a Safety Instrumented Function (SIF).
+  Levels: SIL 1 (lowest), SIL 2, SIL 3, SIL 4 (highest — rare in normal process plants)
+  Meaning: Higher SIL = lower probability of failure on demand
+  CND usage: "The high-high pressure trip is SIL 2 rated" means it was designed and verified to SIL 2 standard
+
+SIS (Safety Instrumented System)
+  Definition: System separate from BPCS that monitors for unsafe conditions and takes automatic protective action.
+  Components: Safety sensors + Safety logic solver (safety PLC) + Final elements (valves, relays)
+  CND requirement: SIS actions must be clearly distinguished from BPCS actions
+
+SOLENOID VALVE
+  Definition: Electrically operated on/off valve. Energised = moves to active position; De-energised = returns to normal position.
+  Fail-safe: Must define what position valve goes to when power is lost
+
+TRIP
+  Definition: An automatic protective action that stops or isolates equipment when a limit is exceeded.
+  Triggered by: High High or Low Low alarm levels
+  Initiating variable: The sensor that detected the unsafe condition
+  CND requirement: Every trip must have an initiating tag, trip setpoint value, and action taken.
+
+================================================================================
+SECTION 2: AMBIGUITY INDICATORS — WORDS THAT REQUIRE NUMERICAL VALUES
+================================================================================
+
+The following words are AMBIGUOUS in a control narrative — they cannot be programmed without a number.
+When these words appear without a numerical value, they are ambiguity violations.
+
+QUANTITY AMBIGUITY (need a number):
+  "high" — high how much? Replace with specific value
+  "low" — low how much? Replace with specific value
+  "sufficient" — sufficient means what number?
+  "adequate" — same problem as sufficient
+  "excessive" — exceeds what limit?
+  "normal" — normal is what range?
+  "significant" — how much is significant?
+  "appropriate" — appropriate is not measurable
+  "acceptable" — acceptable to whom, what range?
+  "maximum" — what is the maximum value?
+  "minimum" — what is the minimum value?
+
+TIME AMBIGUITY (need a duration):
+  "shortly" — how many seconds?
+  "soon" — how many minutes?
+  "quickly" — what rate?
+  "gradually" — over how much time?
+  "slowly" — what rate of change?
+  "immediately" — 0 seconds? 1 second? 30 seconds?
+  "allow to stabilize" — stabilize for how long?
+  "after some time" — how much time?
+  "within a reasonable time" — what is reasonable?
+  "periodically" — every how many minutes?
+
+REFERENCE AMBIGUITY (need a specific tag):
+  "it" — which instrument or equipment?
+  "this valve" — which valve?
+  "the pump" — which pump (P-101 or P-102)?
+  "the system" — which part of the system?
+  "the sensor" — which sensor?
+  "the controller" — which controller?
+  "it should then" — what should? subject is unclear
+
+OBLIGATION AMBIGUITY (shall vs should vs may):
+  "shall" — MANDATORY action, must be implemented
+  "must" — MANDATORY action (same as shall)
+  "should" — RECOMMENDED but not mandatory — ambiguous for PLC code
+  "may" — OPTIONAL — cannot be implemented as deterministic PLC code
+  "might" — POSSIBLE but not certain — same problem as may
+  "could" — same problem
+  PLC CODE NOTE: A PLC can only implement SHALL and MUST. "Should" and "may" require human decision and cannot be coded.
+
+CONDITIONAL AMBIGUITY (need specific condition):
+  "if conditions permit" — what conditions?
+  "when safe to do so" — what defines safe?
+  "as required" — required by what?
+  "when necessary" — necessary under what conditions?
+  "at the operator's discretion" — this is not an interlock, it is a human decision — clarify
+
+================================================================================
+SECTION 3: INTERLOCK TERMINOLOGY
+================================================================================
+
+INITIATING CAUSE
+  Definition: The specific condition that triggers an interlock
+  Required format: [tag] [condition] [numerical threshold] [units]
+  Good example: "PT-101 pressure exceeds 150 PSI"
+  Bad example: "high pressure detected" (no tag, no value)
+
+INITIATING TAG
+  Definition: The instrument that measures the variable that triggers the interlock
+  Requirement: Must be a valid ISA-5.1 tag in the equipment list
+  Violation: Interlock triggered by "high pressure" with no tag reference
+
+TRIP ACTION
+  Definition: The automatic action taken when the interlock triggers
+  Requirement: Must identify specific equipment tag and specific action
+  Good example: "Stop pump P-101 and close valve XV-201"
+  Bad example: "Stop pump and close valves" (which pump? which valves?)
+
+RESET CONDITION
+  Definition: The condition that must be satisfied before the interlock can be reset
+  Requirement: Must be specific (measured value below limit, fault cleared, etc.)
+  Good example: "PT-101 pressure falls below 130 PSI AND operator confirms cause investigated"
+  Bad example: "condition clears" or "fault resolved"
+
+RESET METHOD
+  Definition: How the interlock is cleared — manual operator action or automatic
+  Options: Manual reset (operator must deliberately reset), Auto-reset (clears automatically when condition clears)
+  Safety rule: Trip interlocks should require manual reset
+  CND requirement: Must explicitly state manual or automatic
+
+PRIORITY
+  Definition: Importance level of the interlock action
+  Values: Safety Critical (highest), High, Medium, Low
+  Safety Critical: Interlock prevents injury or major equipment damage
+  High: Interlock prevents significant process upset or equipment damage

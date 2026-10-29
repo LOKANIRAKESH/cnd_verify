@@ -1,0 +1,158 @@
+# ISA-88 BATCH CONTROL — OPERATING MODES AND STATES
+# Source: ISA-88.01-1995 / IEC 61512-1 Batch Control Part 1: Models and Terminology
+# Source: ISA-88 Part 1 Overview (publicly available from ISA)
+# Source: Seborg, Edgar, Mellichamp — Process Dynamics and Control (4th Ed), Chapter 18
+# Use these definitions to verify operating mode sections in Control Narrative Documents
+
+================================================================================
+SECTION 1: REQUIRED OPERATING MODES FOR PUMP STATIONS
+================================================================================
+
+A complete Control Narrative Document for a pump station MUST define the following modes:
+
+MODE 1 — STOPPED
+  Definition: Equipment is at rest. No movement, no production. All rotating equipment stopped.
+  Entry condition: Operator selects STOP, or emergency shutdown is triggered, or startup sequence not yet initiated
+  Exit condition: Operator selects START and all startup permissives are satisfied
+  Required in CND: What state all valves, pumps, and instruments are in when system is STOPPED
+  Common violation: No STOPPED mode defined — assumed but not stated
+
+MODE 2 — STARTING (Startup Sequence)
+  Definition: Transitional mode — system is moving from STOPPED to RUNNING
+  Entry condition: Operator initiates startup, all permissives satisfied
+  Exit condition: All startup steps completed, flow confirmed, system stable
+  Required in CND: Step-by-step sequence with conditions that must be met before advancing
+  Required content per step: step number, action taken, condition to verify before next step
+  Common violation: Steps listed without confirmation conditions ("confirm flow > 20 L/min before Step 5")
+
+MODE 3 — RUNNING (Normal Operation)
+  Definition: System is operating normally within designed parameters
+  Entry condition: Startup sequence completed successfully
+  Exit condition: Shutdown initiated, interlock triggered, or failure detected
+  Required in CND: Normal operating ranges for all controlled variables, automatic control loop behaviour
+  Required content: setpoint values, normal operating ranges (low/high), control loop description
+  Common violation: Normal operation described without numerical ranges
+
+MODE 4 — STANDBY
+  Definition: System is ready to start but not currently running. May be automatic standby.
+  Entry condition: System completed shutdown but is available for restart
+  Exit condition: Startup command received
+  Required in CND: Whether standby is operator-initiated or automatic, conditions for returning to running
+  Note: Not all pump stations have a formal standby mode
+
+MODE 5 — STOPPING (Shutdown Sequence)
+  Definition: Transitional mode — system moving from RUNNING to STOPPED in a controlled manner
+  Entry condition: Operator initiates normal shutdown
+  Exit condition: All equipment confirmed stopped, system in safe state
+  Required in CND: Step-by-step shutdown sequence, order matters (valves before/after pumps)
+  Critical: Pump should generally be stopped before suction valve closes to prevent cavitation
+
+MODE 6 — EMERGENCY SHUTDOWN (ESD)
+  Definition: Immediate uncontrolled stop due to unsafe condition. Speed is priority over orderly shutdown.
+  Entry condition: Safety interlock triggered, manual ESD button pressed, loss of utilities
+  Exit condition: Unsafe condition cleared AND operator manually resets the ESD
+  Required in CND: This section is MANDATORY if any safety interlocks exist
+  Required content: What triggers ESD, what actions happen automatically, how to reset after ESD
+  Critical violation: CND with safety interlocks but no Emergency Shutdown section is incomplete
+
+MODE 7 — MAINTENANCE / MANUAL
+  Definition: Equipment operated under manual control by maintenance personnel for testing or repair
+  Entry condition: Maintenance switch activated, system isolated from automatic control
+  Exit condition: Maintenance complete, switch returned to AUTO
+  Required in CND: Whether manual mode is permitted, what interlocks remain active in manual mode
+  Safety note: Safety interlocks should remain active even in manual mode
+
+================================================================================
+SECTION 2: MODE TRANSITION REQUIREMENTS
+================================================================================
+
+RULE M1: Every mode transition must have defined entry conditions
+  A system cannot transition from STOPPED to RUNNING without checking permissives
+  Permissive examples: suction valve open, motor contactor ready, no fault conditions active
+  Violation: Startup sequence with no permissive checks — unsafe startup possible
+
+RULE M2: Every mode transition must have defined exit conditions
+  System must know when a mode is complete and transition is safe
+  Violation: Startup sequence with no confirmation that startup is complete
+
+RULE M3: Modes must be mutually exclusive
+  System cannot be in RUNNING and STARTING simultaneously
+  Violation: Mode descriptions that overlap or do not have clear boundaries
+
+RULE M4: Emergency Shutdown must be accessible from ALL modes
+  ESD must be possible regardless of what mode the system is currently in
+  Violation: ESD described only from RUNNING mode — what if ESD is needed during startup?
+
+RULE M5: Return from Emergency Shutdown must require manual action
+  After an ESD, the operator must investigate the cause before restart is permitted
+  Auto-restart after ESD is unsafe
+  Violation: CND allows automatic restart after ESD without operator investigation
+
+================================================================================
+SECTION 3: REQUIRED CONTENT PER MODE
+================================================================================
+
+For each defined operating mode, the CND must specify:
+
+1. MODE NAME — clearly labeled section heading
+2. DESCRIPTION — what the system is doing in this mode
+3. ENTRY CONDITIONS — what must be true to enter this mode (permissives)
+4. ACTIONS ON ENTRY — what happens automatically when this mode is entered
+5. NORMAL BEHAVIOUR — what the system does during this mode
+6. EXIT CONDITIONS — what triggers transition out of this mode
+7. ACTIONS ON EXIT — what happens when leaving this mode
+
+Minimum acceptable: Entry conditions + Actions + Exit conditions
+Common violation: Mode described with only the actions, no entry or exit conditions
+
+================================================================================
+SECTION 4: STARTUP SEQUENCE REQUIREMENTS
+================================================================================
+
+A startup sequence is a series of ordered steps to bring the system from STOPPED to RUNNING safely.
+
+REQUIRED ELEMENTS PER STARTUP STEP:
+  Step number (sequential)
+  Action to take (specific equipment, specific action)
+  Verification condition (what to confirm before proceeding to next step)
+  Timeout (maximum time to wait for condition before declaring a fault)
+
+EXAMPLE OF COMPLETE STARTUP STEP:
+  Step 4: Open suction valve XV-101 to fully open position
+  Verification: Confirm XV-101 position indicator shows OPEN
+  Timeout: If XV-101 not fully open within 30 seconds, abort startup
+
+EXAMPLE OF INCOMPLETE STARTUP STEP:
+  Step 4: Open suction valve XV-101
+  (Missing: no verification, no timeout — programmer cannot implement this)
+
+STARTUP PERMISSIVES — conditions that must ALL be true before startup is permitted:
+  Common permissives for pump stations:
+  - No fault conditions active on motor
+  - Suction pressure above minimum (prevents dry running)
+  - Discharge valve in correct initial state
+  - Tank level above minimum
+  - Operator confirmation received
+
+STARTUP SEQUENCE CRITICAL ORDERING RULES:
+  Rule: Open suction valve BEFORE starting pump (prevents dry running cavitation)
+  Rule: Confirm flow AFTER opening discharge valve
+  Rule: Confirm pressure stable BEFORE declaring startup complete
+  Violation: Pump started before suction valve open = pump runs dry = equipment damage
+
+================================================================================
+SECTION 5: SHUTDOWN SEQUENCE REQUIREMENTS
+================================================================================
+
+Normal shutdown must be step-by-step, orderly, and the reverse of startup in most cases.
+
+CRITICAL SHUTDOWN ORDERING:
+  Step 1: Reduce setpoint to minimum or switch to manual
+  Step 2: Stop pump (before closing isolation valves)
+  Step 3: Confirm pump stopped (zero flow, zero speed)
+  Step 4: Close discharge valve
+  Step 5: Close suction valve
+  Step 6: Confirm system in safe state
+
+Violation: Closing suction valve before stopping pump causes cavitation damage
+Violation: No confirmation that pump has stopped before closing valves

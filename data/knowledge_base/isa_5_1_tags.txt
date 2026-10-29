@@ -1,0 +1,178 @@
+# ISA-5.1 INSTRUMENT TAG NAMING — DOMAIN KNOWLEDGE
+# Source: ISA-5.1-2009 Instrumentation Symbols and Identification
+# Source: ISA-5.1 Revision Overview (publicly available from ISA)
+# Source: Bela Liptak — Instrument Engineers Handbook, Volume 1 (Process Measurement)
+# Use these rules to verify instrument tag naming in Control Narrative Documents
+
+================================================================================
+SECTION 1: TAG FORMAT STRUCTURE
+================================================================================
+
+Standard ISA-5.1 tag format:
+  [MEASURED VARIABLE LETTER(S)] - [LOOP NUMBER] [SUFFIX]
+
+Examples:
+  PT-101     = Pressure Transmitter, Loop 101
+  FIC-201    = Flow Indicating Controller, Loop 201
+  XV-301     = On/Off Valve (solenoid operated), Loop 301
+  LT-101A    = Level Transmitter, Loop 101, Unit A (where A/B indicates duplicate)
+  TT-201S    = Temperature Transmitter, Loop 201, Safety (S suffix for SIS instruments)
+
+================================================================================
+SECTION 2: FIRST LETTER — MEASURED VARIABLE
+================================================================================
+
+The first letter identifies what is being measured or controlled:
+
+  A — Analyzer (quality measurement: pH, conductivity, oxygen, concentration)
+  D — Density or Specific Gravity
+  E — Voltage (electrical)
+  F — Flow Rate (volume or mass flow)
+  G — Gauging (position, dimension)
+  H — Hand (manual, operator-initiated)
+  I — Current (electrical amps)
+  J — Power
+  K — Time or Time Schedule
+  L — Level (liquid or solid level in vessel)
+  M — Moisture or Humidity
+  N — User defined
+  O — User defined
+  P — Pressure or Vacuum
+  Q — Quantity (totalised flow, count)
+  R — Radiation
+  S — Speed or Frequency (rotation, vibration)
+  T — Temperature
+  U — Multivariable (more than one measured variable)
+  V — Vibration or Mechanical Analysis
+  W — Weight or Force
+  X — Unclassified (user defined)
+  Y — Event, State, Presence
+  Z — Position or Dimension (valve stem, actuator)
+
+================================================================================
+SECTION 3: SECOND LETTER — FUNCTION MODIFIER
+================================================================================
+
+The second letter (and sometimes third) modifies the first, describing what the instrument does:
+
+  A — Alarm (alert when variable exceeds limit)
+  C — Control (automatic feedback control)
+  D — Differential (difference between two points)
+  E — Primary Element (sensor only, no signal processing)
+  F — Ratio (fraction of one variable to another)
+  G — Glass or Sight (visual indicator, direct reading)
+  H — High (high limit)
+  I — Indicate (display value locally)
+  J — Scan (multiple point measurement)
+  K — Control Station (manual control station)
+  L — Low (low limit) or Light (panel lamp)
+  M — Middle or Intermediate
+  N — User defined
+  O — Orifice (restriction device)
+  P — Point (test connection)
+  Q — Integrate or Totalize
+  R — Record (strip chart, data logger)
+  S — Switch (on/off signal)
+  T — Transmit (send signal to remote location)
+  U — Multifunction
+  V — Valve, Damper, or Louver
+  W — Well (thermowell, pressure tap)
+  X — Unclassified
+  Y — Relay or Compute (signal conditioning)
+  Z — Drive (actuator for valve or damper)
+
+================================================================================
+SECTION 4: COMMON TAG TYPE COMBINATIONS
+================================================================================
+
+PRESSURE INSTRUMENTS:
+  PT   = Pressure Transmitter (sends 4-20mA or digital signal to control system)
+  PI   = Pressure Indicator (local gauge, no signal output)
+  PIC  = Pressure Indicating Controller (measures, displays, and controls pressure)
+  PCV  = Pressure Control Valve (modulating valve for pressure control)
+  PSV  = Pressure Safety Valve (opens automatically at high pressure — mechanical, not in PLC)
+  PSH  = Pressure Switch High (binary signal — pressure above limit)
+  PSL  = Pressure Switch Low (binary signal — pressure below limit)
+  PV   = Pressure Control Valve (receives 4-20mA from controller)
+
+FLOW INSTRUMENTS:
+  FT   = Flow Transmitter (measures flow, sends to control system)
+  FI   = Flow Indicator (local display, no signal)
+  FIC  = Flow Indicating Controller (measures, displays, and controls flow)
+  FCV  = Flow Control Valve (modulating valve for flow control)
+  FE   = Flow Element (orifice plate, venturi — primary element only)
+
+LEVEL INSTRUMENTS:
+  LT   = Level Transmitter (continuous level measurement)
+  LI   = Level Indicator (local gauge)
+  LIC  = Level Indicating Controller
+  LS   = Level Switch (binary: high or low)
+  LSH  = Level Switch High (binary — level above limit)
+  LSL  = Level Switch Low (binary — level below limit)
+  LSdHH = Level Switch High High (safety level switch)
+
+TEMPERATURE INSTRUMENTS:
+  TT   = Temperature Transmitter
+  TI   = Temperature Indicator (thermocouple with display)
+  TIC  = Temperature Indicating Controller
+  TE   = Temperature Element (thermocouple or RTD sensor only)
+
+VALVES:
+  XV   = On/Off Valve (solenoid operated, fully open or fully closed)
+  FV   = Flow Control Valve (modulating, 0-100% open)
+  PV   = Pressure Control Valve (modulating)
+  TV   = Temperature Control Valve (modulating)
+  HV   = Hand Valve (manually operated, no automatic control)
+
+MOTORS AND DRIVES:
+  MCC  = Motor Control Centre (panel for motor starters)
+  HS   = Hand Switch (operator pushbutton or selector switch)
+  MS   = Motor Switch
+  VFD  = Variable Frequency Drive (speed control for motor)
+
+================================================================================
+SECTION 5: LOOP NUMBER RULES
+================================================================================
+
+Loop numbers group related instruments:
+  All instruments in the same control loop share the same number
+  Example: PT-101, PIC-101, PV-101 are all in pressure control loop 101
+
+Loop number ranges are often assigned by plant area:
+  100-199: Area 1 (e.g., feed area)
+  200-299: Area 2 (e.g., reaction area)
+  300-399: Area 3 (e.g., product area)
+
+Suffix rules:
+  A, B = Duplicate instruments (PT-101A and PT-101B = two pressure transmitters in same loop)
+  S = Safety instrument (part of SIS, not BPCS)
+  X = Spare or test connection
+
+================================================================================
+SECTION 6: TAG NAMING VIOLATIONS IN CONTROL NARRATIVES
+================================================================================
+
+VIOLATION 1 — TAG TYPE INCONSISTENCY
+  Description: Same tag described as different instrument types in different sections
+  Example: "FT-201 flow transmitter" in Section 2, "FT-201 flow indicator" in Section 4
+  Impact: PLC programmer orders wrong equipment, wrong I/O card type
+
+VIOLATION 2 — NON-STANDARD TAG FORMAT
+  Description: Tag does not follow X-NNN format
+  Examples of invalid tags: "PUMP1_PRESSURE", "P-TRANS-01", "flow_meter_A"
+  Impact: Cannot be mapped to standard HMI templates, causes integration errors
+
+VIOLATION 3 — TAG USED BUT NOT DEFINED
+  Description: Tag appears in interlock or sequence but not in equipment list
+  Example: "Close XV-403 during shutdown" but XV-403 not listed in equipment
+  Impact: Programmer cannot find the instrument, may assume it does not exist
+
+VIOLATION 4 — SAME LOOP NUMBER FOR DIFFERENT PURPOSES
+  Description: Two different instruments with the same loop number
+  Example: PT-101 (pressure transmitter) and FT-101 (flow transmitter) — different variables, same loop number
+  Impact: Ambiguous — which loop does 101 refer to?
+
+VIOLATION 5 — SAFETY INSTRUMENT NOT IDENTIFIED
+  Description: Instrument in safety interlock not marked with S suffix or identified as SIS
+  Example: High pressure trip uses PT-101 but should be PT-101S (safety-rated instrument)
+  Impact: Safety instrument may not be installed as SIL-rated, creating compliance risk

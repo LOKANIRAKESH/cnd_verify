@@ -1,0 +1,42 @@
+# CND-Verify — Python Dependencies
+# Install with: pip install -r requirements.txt
+
+# Agentic orchestration
+langgraph>=0.2.0
+langchain>=0.3.0
+langchain-community>=0.3.0
+langchain-ollama>=0.2.0
+langchain-core>=0.3.0
+
+# Vector database
+chromadb>=0.5.0
+
+# Embeddings (runs locally, no API key)
+sentence-transformers>=3.0.0
+
+# PDF parsing
+pymupdf>=1.24.0
+pdfplumber>=0.11.0
+
+# Dashboard
+streamlit>=1.38.0
+plotly>=5.20.0
+
+# Data models and validation
+pydantic>=2.8.0
+
+# Unit conversion
+pint>=0.24.0
+
+# Graph algorithms (circular interlock detection)
+networkx>=3.3
+
+# Word document output
+python-docx>=1.1.0
+
+# Testing
+pytest>=8.0.0
+
+# Utilities
+python-dotenv>=1.0.0
+pyyaml>=6.0.0
