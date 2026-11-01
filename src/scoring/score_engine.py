@@ -149,14 +149,14 @@ def run_score_engine(state: VerificationState) -> VerificationState:
     }
 
     # ── Weighted composite ────────────────────────────────────────────────────
-    # image_agent contributes a small share (0.05) drawn proportionally from
-    # the other weights so the total remains 1.0
+    # Weights in config sum to 0.95; image gets the remaining 0.05.
+    # Total max composite = 1.0 when all agent scores = 1.0.
     composite = round(
-        weights["completeness"]    * 0.95 * scores["completeness"]
-        + weights["consistency"]   * 0.95 * scores["consistency"]
-        + weights["ambiguity"]     * 0.95 * scores["ambiguity"]
-        + weights.get("logic_coherence", 0.15) * 0.95 * scores["logic_coherence"]
-        + 0.05                                        * scores["image"],
+        weights["completeness"]                         * scores["completeness"]
+        + weights["consistency"]                        * scores["consistency"]
+        + weights["ambiguity"]                          * scores["ambiguity"]
+        + weights.get("logic_coherence", 0.15)          * scores["logic_coherence"]
+        + 0.05                                          * scores["image"],
         3,
     )
 

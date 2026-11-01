@@ -98,6 +98,7 @@ def build_document_index(state: dict, config: dict) -> dict:
     definition_map: dict[str, dict]  = {}
 
     batch_ids, batch_docs, batch_metas = [], [], []
+    total_sentences = 0
     BATCH_SIZE = 100
 
     for section_title, section_text in sections.items():
@@ -165,14 +166,16 @@ def build_document_index(state: dict, config: dict) -> dict:
 
             if len(batch_ids) >= BATCH_SIZE:
                 _flush_batch(collection, batch_ids, batch_docs, batch_metas)
+                total_sentences += len(batch_ids)
                 batch_ids, batch_docs, batch_metas = [], [], []
 
     if batch_ids:
+        total_sentences += len(batch_ids)
         _flush_batch(collection, batch_ids, batch_docs, batch_metas)
 
     logger.info(
         "Document index built: %d sentences, %d tags, %d setpoints, %d definitions",
-        len(batch_ids), len(tag_index), len(setpoint_index), len(definition_map),
+        total_sentences, len(tag_index), len(setpoint_index), len(definition_map),
     )
 
     # ── Build section chunk groups for parallel Pass 2 ────────────────────────
@@ -183,6 +186,17 @@ def build_document_index(state: dict, config: dict) -> dict:
     state["setpoint_index"]      = setpoint_index
     state["definition_map"]      = definition_map
     state["chunk_groups"]        = chunk_groups
+
+    # Build interlock graph so logic_coherence_agent has it in state
+    try:
+        interlock_graph_data, has_cycle = build_interlock_graph(sections)
+    except Exception as exc:
+        logger.warning("build_interlock_graph failed: %s", exc)
+        interlock_graph_data = {"nodes": [], "edges": [], "cycle_detected": False, "cycles": []}
+        has_cycle = False
+    state["interlock_graph_data"]   = interlock_graph_data
+    state["has_circular_interlock"] = has_cycle
+
     return state
 
 
@@ -237,6 +251,64 @@ def _infer_parameter(sentence: str, tag: str) -> str:
                             "less than", "low alarm", "lo alarm", "low")):  return "lo"
     if any(w in s for w in ("setpoint", "set point", "sp")):                return "sp"
     return "value"
+
+
+def build_interlock_graph(sections: dict) -> tuple[dict, bool]:
+    """
+    Scan interlock / ESD / safety sections for tag relationship patterns.
+    Builds a directed graph: A → B means "A trips / stops / activates B".
+    Detects cycles (circular interlocks) using networkx.
+
+    Returns (graph_data dict, has_cycle bool).
+    graph_data = {
+        "nodes":          list of tag strings,
+        "edges":          list of {"from": str, "to": str},
+        "cycle_detected": bool,
+        "cycles":         list of str (each cycle as "A → B → A"),
+    }
+    """
+    try:
+        import networkx as nx
+    except ImportError:
+        logger.warning("networkx not installed — interlock graph skipped")
+        return {"nodes": [], "edges": [], "cycle_detected": False, "cycles": []}, False
+
+    _IL_KW = {"interlock", "esd", "emergency", "safety", "shutdown", "trip"}
+    _TRIP_RE = re.compile(
+        r"\b([A-Z]{1,3}-\d{1,4}[A-Z]?)\b"
+        r"[^.]{0,40}"
+        r"\b(?:trips?|stops?|de-?energi[sz]es?|shuts?\s+down|initiates?|activates?|closes?)\b"
+        r"[^.]{0,40}"
+        r"\b([A-Z]{1,3}-\d{1,4}[A-Z]?)\b",
+        re.IGNORECASE,
+    )
+
+    edges_set: set[tuple] = set()
+    for title, text in sections.items():
+        if not any(kw in title.lower() for kw in _IL_KW):
+            continue
+        for m in _TRIP_RE.finditer(text):
+            src, dst = m.group(1).upper(), m.group(2).upper()
+            if src != dst:
+                edges_set.add((src, dst))
+
+    nodes = sorted({t for edge in edges_set for t in edge})
+    edges = [{"from": src, "to": dst} for src, dst in sorted(edges_set)]
+
+    G = nx.DiGraph()
+    G.add_nodes_from(nodes)
+    G.add_edges_from((e["from"], e["to"]) for e in edges)
+
+    cycles_raw = list(nx.simple_cycles(G))
+    cycle_strs = [" → ".join(c + [c[0]]) for c in cycles_raw]
+
+    graph_data = {
+        "nodes":          nodes,
+        "edges":          edges,
+        "cycle_detected": bool(cycles_raw),
+        "cycles":         cycle_strs,
+    }
+    return graph_data, bool(cycles_raw)
 
 
 def _build_chunk_groups(sections: dict, sections_pages: dict) -> list[dict]:

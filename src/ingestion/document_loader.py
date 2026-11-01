@@ -387,8 +387,11 @@ def prepare_document(file_path: str) -> dict:
         "completeness_report": None,
         "consistency_report": None,
         "ambiguity_report": None,
+        "logic_coherence_report": None,
         "image_report": None,
         "image_summary": [],
+        "interlock_graph_data": {},
+        "current_doc_name": None,
         "all_findings": [],
         "vqs_scores": None,
         # PLC generation

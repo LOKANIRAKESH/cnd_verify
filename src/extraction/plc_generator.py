@@ -494,7 +494,7 @@ def run_plc_generator(state: dict) -> dict:
           equipment_class: "PUMP" | "VALVE" | ...
           page:            page tag was found on
           clean:           True
-          findings_avoided: count of findings on OTHER tags
+          dirty_tags_avoided: list of tags with HIGH/CRITICAL findings that were skipped
         }
       }
       plc_summary: {

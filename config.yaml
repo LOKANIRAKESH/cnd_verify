@@ -19,9 +19,11 @@ embeddings:
 
 scoring:
   weights:
-    completeness: 0.35    # Highest weight — missing info blocks PLC coding
-    consistency: 0.35     # Highest weight — contradictions cause wrong code
-    ambiguity: 0.30       # Lower — vague but codable
+    completeness: 0.28    # Highest weight — missing info blocks PLC coding
+    consistency: 0.28     # Highest weight — contradictions cause wrong code
+    ambiguity: 0.24       # Lower — vague but codable
+    logic_coherence: 0.15 # Circular interlocks, unsafe sequences
+    # image contributes 0.05 (hardcoded in score_engine.py); all weights sum to 1.0
 
   thresholds:
     pass: 0.85            # VQS >= 0.85 → AUTO PASS
