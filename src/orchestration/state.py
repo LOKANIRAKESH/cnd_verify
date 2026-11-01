@@ -62,6 +62,8 @@ class VQSScores(BaseModel):
     completeness: float = 1.0
     consistency: float = 1.0
     ambiguity: float = 1.0
+    logic_coherence: float = 1.0
+    image: float = 1.0
     composite: float = 1.0
     routing_decision: str = "PENDING"  # AUTO_PASS | NEEDS_REVIEW | FAIL | MANDATORY_REVISION
 
@@ -94,10 +96,14 @@ class VerificationState(TypedDict):
     completeness_report: Optional[dict]   # AgentReport serialised to dict
     consistency_report: Optional[dict]
     ambiguity_report: Optional[dict]
-    image_report: Optional[dict]    # NEW — image cross-validation agent
+    logic_coherence_report: Optional[dict]   # logic coherence + circular interlock
+    image_report: Optional[dict]    # image cross-validation agent
 
     # Image metadata for UI display
     image_summary: list             # [{page, class, width, height, tags_found, thumbnail}]
+
+    # Knowledge graph (built in Pass 1 alongside ChromaDB index)
+    interlock_graph_data: dict      # {nodes, edges, cycle_detected, cycles}
 
     # Combined findings (populated by score_engine after all agents complete)
     all_findings: list[dict]
@@ -115,3 +121,6 @@ class VerificationState(TypedDict):
 
     # Pipeline control
     error: Optional[str]           # Set if pipeline fails — stops further processing
+
+    # UI metadata (not used by backend agents — for display only)
+    current_doc_name: Optional[str]

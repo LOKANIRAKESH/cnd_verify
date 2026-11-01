@@ -11,9 +11,9 @@ Full CND-Verify LangGraph pipeline — two-pass architecture:
     START
       → build_document_index          ← Pass 1: global knowledge store
       → image_agent                   ← image extraction (runs before text agents)
-      → completeness_agent            ← section/field completeness
+      → completeness_ambiguity        ← completeness + ambiguity in parallel
       → consistency_agent             ← cross-section contradictions
-      → ambiguity_agent               ← vague language detection
+      → logic_coherence_agent         ← circular interlocks, unsafe sequences
       → score_engine                  ← VQS scoring + routing decision
       → plc_generator                 ← IEC 61131-3 ST code for clean equipment
     END
@@ -30,6 +30,7 @@ from src.agents.completeness_agent import run_completeness_agent
 from src.agents.consistency_agent import run_consistency_agent
 from src.agents.ambiguity_agent import run_ambiguity_agent
 from src.agents.image_agent import run_image_agent
+from src.agents.logic_coherence_agent import run_logic_coherence_agent
 from src.scoring.score_engine import run_score_engine
 from src.extraction.plc_generator import run_plc_generator
 
@@ -149,6 +150,9 @@ def build_graph() -> StateGraph:
     graph.add_node("completeness_ambiguity", _parallel_completeness_ambiguity)
     graph.add_node("consistency_agent",      _safe(run_consistency_agent))
 
+    # Logic coherence — circular interlocks, unsafe sequences
+    graph.add_node("logic_coherence_agent",  _safe(run_logic_coherence_agent))
+
     # Score engine — aggregates all findings
     graph.add_node("score_engine",           _safe(run_score_engine))
 
@@ -160,7 +164,8 @@ def build_graph() -> StateGraph:
     graph.add_edge("build_document_index",   "image_agent")
     graph.add_edge("image_agent",            "completeness_ambiguity")
     graph.add_edge("completeness_ambiguity", "consistency_agent")
-    graph.add_edge("consistency_agent",      "score_engine")
+    graph.add_edge("consistency_agent",      "logic_coherence_agent")
+    graph.add_edge("logic_coherence_agent",  "score_engine")
     graph.add_edge("score_engine",           "plc_generator")
     graph.add_edge("plc_generator",          END)
 

@@ -278,11 +278,17 @@ def _make_thumbnail(img_bytes: bytes, fmt: str) -> bytes:
 
 
 def _build_report(findings: list[Finding], image_summary: list[dict]) -> AgentReport:
+    try:
+        import yaml
+        with open("config.yaml") as f:
+            p = yaml.safe_load(f)["scoring"]["penalty_per_finding"]
+    except Exception:
+        p = {"CRITICAL": 0.20, "HIGH": 0.10, "WARNING": 0.03, "INFO": 0.01}
     critical = sum(1 for f in findings if f.severity == "CRITICAL")
     high     = sum(1 for f in findings if f.severity == "HIGH")
     warning  = sum(1 for f in findings if f.severity == "WARNING")
     info     = sum(1 for f in findings if f.severity == "INFO")
-    score    = max(0.0, 1.0 - critical * 0.20 - high * 0.10 - warning * 0.05 - info * 0.01)
+    score    = max(0.0, 1.0 - critical * p["CRITICAL"] - high * p["HIGH"] - warning * p["WARNING"] - info * p["INFO"])
     return AgentReport(
         agent_name="image",
         findings=findings,

@@ -21,3 +21,6 @@ temp_upload_*
 *.bin
 *.pt
 *.onnx
+
+# Old nested working directory — not part of this repo
+cnd-verify/

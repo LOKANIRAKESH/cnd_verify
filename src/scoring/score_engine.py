@@ -17,10 +17,11 @@ def load_config(config_path: str = "config.yaml") -> dict:
 def compute_agent_score(report: dict, penalties: dict) -> float:
     """
     Recompute agent score from findings list.
-    Allows score_engine to apply consistent penalty weights.
+    Returns 0.5 when an agent report is absent (agent failed to run)
+    so the composite score is degraded rather than inflated to 1.0.
     """
     if not report:
-        return 1.0   # No report means agent did not run — treat as neutral
+        return 0.5   # agent did not run — treat as uncertain, not perfect
 
     score = 1.0
     for finding in report.get("findings", []):
@@ -34,7 +35,14 @@ def apply_hard_fail_conditions(state: VerificationState) -> str | None:
     """
     Check for conditions that force MANDATORY_REVISION regardless of score.
     Returns the reason string if hard fail, or None if no hard fail.
+    Three conditions checked (per design spec):
+      1. Circular interlock
+      2. Missing critical sections (Emergency Shutdown, Interlocks, Alarms)
+      3. >20% of prose-referenced tags absent from tag inventory
+    NOTE: called before all_findings is written to state, so we derive tags
+    directly from the agent reports rather than reading state["all_findings"].
     """
+    import re
     reasons = []
 
     if state.get("has_circular_interlock"):
@@ -46,6 +54,30 @@ def apply_hard_fail_conditions(state: VerificationState) -> str | None:
             f"Critical section(s) missing: {', '.join(missing_critical)}"
         )
 
+    # Condition 3 — unresolved tag references (>20% of all prose tags not in inventory)
+    tag_inventory: list = state.get("tag_inventory", [])
+    if tag_inventory:
+        inventory_set = set(tag_inventory)
+        prose_tags: set[str] = set(tag_inventory)
+        for report_key in ("completeness_report", "consistency_report",
+                           "ambiguity_report", "image_report"):
+            report = state.get(report_key) or {}
+            for f in report.get("findings", []):
+                for t in re.findall(
+                    r"\b[A-Z]{1,3}-[0-9]{1,4}[A-Z]?\b",
+                    f.get("description", "") + " " + f.get("quote", ""),
+                ):
+                    prose_tags.add(t)
+        undefined = prose_tags - inventory_set
+        ratio = len(undefined) / len(prose_tags)
+        if ratio > 0.20:
+            reasons.append(
+                f"{len(undefined)}/{len(prose_tags)} prose-referenced tags "
+                f"({ratio*100:.0f}%) absent from tag inventory — "
+                f"undefined: {', '.join(sorted(undefined)[:10])}"
+                + (" ..." if len(undefined) > 10 else "")
+            )
+
     if reasons:
         return " | ".join(reasons)
     return None
@@ -54,7 +86,8 @@ def apply_hard_fail_conditions(state: VerificationState) -> str | None:
 def collect_all_findings(state: VerificationState) -> list[dict]:
     """Merge findings from all agent reports into one flat list."""
     all_findings = []
-    for report_key in ["completeness_report", "consistency_report", "ambiguity_report"]:
+    for report_key in ["completeness_report", "consistency_report",
+                       "ambiguity_report", "logic_coherence_report", "image_report"]:
         report = state.get(report_key)
         if report and "findings" in report:
             all_findings.extend(report["findings"])
@@ -108,16 +141,22 @@ def run_score_engine(state: VerificationState) -> VerificationState:
 
     # ── Compute per-agent scores ──────────────────────────────────────────────
     scores = {
-        "completeness": compute_agent_score(state.get("completeness_report"), penalties),
-        "consistency": compute_agent_score(state.get("consistency_report"), penalties),
-        "ambiguity": compute_agent_score(state.get("ambiguity_report"), penalties),
+        "completeness":    compute_agent_score(state.get("completeness_report"),    penalties),
+        "consistency":     compute_agent_score(state.get("consistency_report"),     penalties),
+        "ambiguity":       compute_agent_score(state.get("ambiguity_report"),       penalties),
+        "logic_coherence": compute_agent_score(state.get("logic_coherence_report"), penalties),
+        "image":           compute_agent_score(state.get("image_report"),           penalties),
     }
 
     # ── Weighted composite ────────────────────────────────────────────────────
+    # image_agent contributes a small share (0.05) drawn proportionally from
+    # the other weights so the total remains 1.0
     composite = round(
-        weights["completeness"] * scores["completeness"]
-        + weights["consistency"] * scores["consistency"]
-        + weights["ambiguity"] * scores["ambiguity"],
+        weights["completeness"]    * 0.95 * scores["completeness"]
+        + weights["consistency"]   * 0.95 * scores["consistency"]
+        + weights["ambiguity"]     * 0.95 * scores["ambiguity"]
+        + weights.get("logic_coherence", 0.15) * 0.95 * scores["logic_coherence"]
+        + 0.05                                        * scores["image"],
         3,
     )
 
@@ -134,6 +173,8 @@ def run_score_engine(state: VerificationState) -> VerificationState:
         completeness=scores["completeness"],
         consistency=scores["consistency"],
         ambiguity=scores["ambiguity"],
+        logic_coherence=scores["logic_coherence"],
+        image=scores["image"],
         composite=composite,
         routing_decision=routing,
     )
