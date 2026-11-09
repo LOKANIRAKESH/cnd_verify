@@ -316,27 +316,31 @@ def run_completeness_agent(state: dict) -> dict:
     if interlock_text and equipment_text:
         interlock_tags = set(re.findall(r"\b[A-Z]{1,3}-[0-9]{1,4}[A-Z]?\b", interlock_text))
         equipment_tags = set(re.findall(r"\b[A-Z]{1,3}-[0-9]{1,4}[A-Z]?\b", equipment_text))
-        for tag in sorted(interlock_tags - equipment_tags):
-            page = _find_text_page(document_text, tag, interlock_page)
-            findings.append(build_finding(
-                finding_type="UNDEFINED_TAG_REFERENCE",
-                description=f"Tag '{tag}' is used in the Interlocks section but not defined in the Equipment List.",
-                severity="HIGH",
-                section_title=interlock_section_title,
-                page_number=page,
-                quote=f"Tag {tag} referenced in interlocks but absent from equipment list",
-                rule_violated="ISA-5.1 — All tags must be defined",
-                rule_text="Every instrument tag used in a control narrative must appear in the equipment list with its type, range, and purpose.",
-                why_it_matters=(
-                    f"The PLC programmer cannot wire up '{tag}' because its instrument type, "
-                    f"signal range, and I/O card assignment are unknown."
-                ),
-                suggestion=(
-                    f"Add '{tag}' to the Equipment List with: instrument type, measurement range, "
-                    f"output signal type (4-20mA / digital), and purpose description."
-                ),
-                evidence_source="ISA-5.1 tag naming and definition standard",
-            ))
+        undefined = sorted(interlock_tags - equipment_tags)
+        # Only report when 3+ tags are undefined — single missing tags are often abbreviations
+        # or cross-references that don't warrant a blocking finding.
+        if len(undefined) >= 3:
+            for tag in undefined[:5]:
+                page = _find_text_page(document_text, tag, interlock_page)
+                findings.append(build_finding(
+                    finding_type="UNDEFINED_TAG_REFERENCE",
+                    description=f"Tag '{tag}' is used in the Interlocks section but not defined in the Equipment List.",
+                    severity="HIGH",
+                    section_title=interlock_section_title,
+                    page_number=page,
+                    quote=f"Tag {tag} referenced in interlocks but absent from equipment list",
+                    rule_violated="ISA-5.1 — All tags must be defined",
+                    rule_text="Every instrument tag used in a control narrative must appear in the equipment list with its type, range, and purpose.",
+                    why_it_matters=(
+                        f"The PLC programmer cannot wire up '{tag}' because its instrument type, "
+                        f"signal range, and I/O card assignment are unknown."
+                    ),
+                    suggestion=(
+                        f"Add '{tag}' to the Equipment List with: instrument type, measurement range, "
+                        f"output signal type (4-20mA / digital), and purpose description."
+                    ),
+                    evidence_source="ISA-5.1 tag naming and definition standard",
+                ))
 
     # ── Build report ──────────────────────────────────────────────────────────
     report = _build_report(findings, config)

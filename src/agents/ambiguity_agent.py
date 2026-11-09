@@ -319,16 +319,11 @@ def run_ambiguity_agent(state: dict) -> dict:
                 context = _extract_context(section_text, match)
 
                 # LLM confirmation — filters false positives.
-                # If LLM fails (returns None), fall back to accepting the regex match
-                # at default severity rather than silently dropping it.
+                # If LLM is unavailable, skip the finding rather than accepting
+                # the regex match blindly (regex alone has too many false positives).
                 confirmation = _confirm_ambiguity_with_llm(phrase, context, ambiguity_type, llm)
                 if confirmation is None:
-                    confirmation = {
-                        "is_ambiguous": True,
-                        "severity": _SEVERITY_MAP.get(ambiguity_type, "WARNING"),
-                        "explanation": f"Matches {ambiguity_type} pattern — LLM confirmation unavailable",
-                        "programmable_alternative": "",
-                    }
+                    continue
 
                 page = _find_text_page(document_text, context[:40], section_page)
 

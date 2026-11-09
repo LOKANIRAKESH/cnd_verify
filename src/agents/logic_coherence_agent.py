@@ -143,57 +143,64 @@ def _check_missing_hysteresis(state: dict) -> list[Finding]:
         if not any(kw in section_title.lower() for kw in _IL_SECTION_KW):
             continue
 
-        trip_matches  = _TRIP_VAL_RE.findall(section_text)
-        reset_matches = _RESET_VAL_RE.findall(section_text)
+        # Split on interlock boundary markers so we compare values per-interlock,
+        # not across the whole section (avoids cross-interlock false positives).
+        interlock_blocks = re.split(r"(?i)\bIL-\d{3}\b|\n\s*\n", section_text)
+        if len(interlock_blocks) <= 1:
+            interlock_blocks = [section_text]
 
-        if not trip_matches or not reset_matches:
-            continue
+        for block in interlock_blocks:
+            trip_matches  = _TRIP_VAL_RE.findall(block)
+            reset_matches = _RESET_VAL_RE.findall(block)
 
-        trip_vals  = {float(v) for v, _ in trip_matches if v}
-        reset_vals = {float(v) for v, _ in reset_matches if v}
-        shared = trip_vals & reset_vals
+            if not trip_matches or not reset_matches:
+                continue
 
-        for val in shared:
-            page = state.get("sections_pages", {}).get(section_title, 0)
-            tags = ISA_TAG_RE.findall(section_text[:500])
-            tag_str = ", ".join(tags[:3]) if tags else "unknown tag"
+            trip_vals  = {float(v) for v, _ in trip_matches if v}
+            reset_vals = {float(v) for v, _ in reset_matches if v}
+            shared = trip_vals & reset_vals
 
-            findings.append(Finding(
-                id=f"LC-{uuid.uuid4().hex[:8].upper()}",
-                agent="logic_coherence",
-                finding_type="MISSING_HYSTERESIS",
-                description=(
-                    f"In section '{section_title}', the trip setpoint ({val}) equals the "
-                    f"reset setpoint ({val}). Without a hysteresis band, the interlock "
-                    f"will oscillate (trip → reset → trip → ...) when the process value "
-                    f"sits at exactly this threshold."
-                ),
-                page_number=page,
-                section_title=section_title,
-                quote=(
-                    f"Trip condition at {val} and reset condition also at {val} "
-                    f"(tags: {tag_str})"
-                ),
-                rule_violated="ISA-84 §5.4.3 — Hysteresis requirement for SIF reset",
-                rule_text=(
-                    "Safety instrumented functions should include appropriate hysteresis "
-                    "between the trip initiation value and the reset value to prevent "
-                    "process oscillation and chattering (ISA-84 §5.4.3)."
-                ),
-                why_it_matters=(
-                    "Oscillating interlocks repeatedly start and stop equipment, causing "
-                    "mechanical wear, false alarms, and operator alarm fatigue. In severe "
-                    "cases, the oscillation can prevent the process from stabilising."
-                ),
-                suggestion=(
-                    f"Define a hysteresis band: trip at {val}, reset at {val * 0.85:.1f} "
-                    f"(15% below trip). The reset threshold should be documented explicitly "
-                    f"in the interlock definition table."
-                ),
-                severity="HIGH",
-                evidence_source="Deterministic setpoint comparison — trip vs reset values",
-                status="OPEN",
-            ))
+            for val in shared:
+                page = state.get("sections_pages", {}).get(section_title, 0)
+                tags = ISA_TAG_RE.findall(block[:500])
+                tag_str = ", ".join(tags[:3]) if tags else "unknown tag"
+
+                findings.append(Finding(
+                    id=f"LC-{uuid.uuid4().hex[:8].upper()}",
+                    agent="logic_coherence",
+                    finding_type="MISSING_HYSTERESIS",
+                    description=(
+                        f"In section '{section_title}', the trip setpoint ({val}) equals the "
+                        f"reset setpoint ({val}). Without a hysteresis band, the interlock "
+                        f"will oscillate (trip → reset → trip → ...) when the process value "
+                        f"sits at exactly this threshold."
+                    ),
+                    page_number=page,
+                    section_title=section_title,
+                    quote=(
+                        f"Trip condition at {val} and reset condition also at {val} "
+                        f"(tags: {tag_str})"
+                    ),
+                    rule_violated="ISA-84 §5.4.3 — Hysteresis requirement for SIF reset",
+                    rule_text=(
+                        "Safety instrumented functions should include appropriate hysteresis "
+                        "between the trip initiation value and the reset value to prevent "
+                        "process oscillation and chattering (ISA-84 §5.4.3)."
+                    ),
+                    why_it_matters=(
+                        "Oscillating interlocks repeatedly start and stop equipment, causing "
+                        "mechanical wear, false alarms, and operator alarm fatigue. In severe "
+                        "cases, the oscillation can prevent the process from stabilising."
+                    ),
+                    suggestion=(
+                        f"Define a hysteresis band: trip at {val}, reset at {val * 0.85:.1f} "
+                        f"(15% below trip). The reset threshold should be documented explicitly "
+                        f"in the interlock definition table."
+                    ),
+                    severity="HIGH",
+                    evidence_source="Deterministic setpoint comparison — trip vs reset values",
+                    status="OPEN",
+                ))
 
     return findings
 
