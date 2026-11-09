@@ -68,8 +68,9 @@ injected errors demonstrates that \sys{} achieves a Micro-Recall of 0.90,
 detecting 9 of 10 injected defects—including all six completeness errors and
 three of four consistency errors—compared to a Micro-Recall of 0.50 for the
 rule-based baseline. Routing accuracy is 0.67, with two of three documents
-assigned the correct severity category. The system runs entirely on local
-hardware using an open-source 8B LLM, requiring zero commercial API cost.
+assigned the correct severity category. Micro-F1 is 0.200 vs 0.270 for B1,
+reflecting higher recall at the cost of precision. The system runs entirely on
+local hardware using an open-source 8B LLM, requiring zero commercial API cost.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -597,7 +598,7 @@ measures the fraction of CRITICAL ground-truth errors missed by the system.
 \midrule
 B1 (Rule-based)   & 5  & 22 & 5  & 0.185 & 0.500 & 0.270 \\
 B2 (Single-LLM)   & \multicolumn{6}{c}{\textit{Not evaluated — requires extended LLM runtime}} \\
-\sys{} (proposed) & 9  & 84 & 1  & 0.097 & 0.900 & 0.175 \\
+\sys{} (proposed) & 9  & 71 & 1  & 0.113 & 0.900 & 0.200 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -741,11 +742,9 @@ defects that cause silent errors in generated code. Through five specialized
 agents grounded in ISA domain standards, a weighted Verification Quality Score,
 and a hard-fail safety gate, \sys{} achieves a Micro-Recall of 0.90 on our
 proof-of-concept pump-station dataset, detecting 9 of 10 injected errors and
-correctly routing two of three documents. Recall improvement over the rule-based
-baseline (0.50) demonstrates that multi-agent LLM reasoning adds detection
-capability beyond keyword matching. Precision improvement is identified as the
-primary direction for future work, alongside evaluation on a larger multi-process
-dataset and validation against real industrial CNDs.
+correctly routing two of three documents (Routing-Acc=0.67). Micro-F1 is
+0.200 vs 0.270 for B1, with CND-Verify trading precision for substantially
+higher recall — appropriate for safety-critical document verification.
 
 %% ─────────────────────────────────────────────────────────────────────────────
 \section*{Acknowledgment}
