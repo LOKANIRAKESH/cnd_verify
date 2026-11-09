@@ -1,0 +1,64 @@
+{
+  "B1": {
+    "results": [
+      {
+        "doc_id": "PS-01",
+        "skipped": false,
+        "findings_count": 9,
+        "elapsed_s": 0.0,
+        "routing": "N/A",
+        "routing_correct": false,
+        "overall": {
+          "tp": 0,
+          "fp": 9,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": 1.0,
+          "f1": 0.0
+        }
+      },
+      {
+        "doc_id": "PS-02",
+        "skipped": false,
+        "findings_count": 9,
+        "elapsed_s": 0.1,
+        "routing": "N/A",
+        "routing_correct": false,
+        "overall": {
+          "tp": 5,
+          "fp": 4,
+          "fn": 1,
+          "precision": 0.556,
+          "recall": 0.833,
+          "f1": 0.667
+        }
+      },
+      {
+        "doc_id": "PS-03",
+        "skipped": false,
+        "findings_count": 9,
+        "elapsed_s": 0.1,
+        "routing": "N/A",
+        "routing_correct": false,
+        "overall": {
+          "tp": 0,
+          "fp": 9,
+          "fn": 4,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        }
+      }
+    ],
+    "summary": {
+      "n_docs": 3,
+      "micro_precision": 0.185,
+      "micro_recall": 0.5,
+      "micro_f1": 0.27,
+      "routing_accuracy": 0.0,
+      "total_tp": 5,
+      "total_fp": 22,
+      "total_fn": 5
+    }
+  }
+}

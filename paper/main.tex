@@ -375,6 +375,85 @@ collection at runtime to ground their findings in specific standard clauses.
 \subsection{Layer 2: Multi-Agent Verification}
 \label{subsec:agents}
 
+Fig.~\ref{fig:pipeline} shows the LangGraph execution sequence. All five agents
+run in parallel over the shared state; the Score Engine executes only after all
+agent reports are complete.
+
+\begin{figure}[!t]
+\centering
+\begin{tikzpicture}[
+  font=\small,
+  >=Latex,
+  every node/.style={align=center},
+  stage/.style={draw, rounded corners=3pt, fill=#1!12, draw=#1!50,
+                minimum width=22mm, minimum height=8mm},
+  arr/.style={->, thick, draw=gray!60},
+  par/.style={draw=blue!40, dashed, rounded corners=4pt, fill=blue!3,
+              inner sep=3pt}
+]
+
+%% Column positions
+\def\xIn{0}
+\def\xPh{2.6}
+\def\xSE{8.4}
+\def\xRt{10.8}
+\def\xOut{13.2}
+
+%% Input
+\node[stage=gray] (IN) at (\xIn, 0)   {CND\\PDF};
+
+%% Ingestion
+\node[stage=teal] (ING) at (\xPh-0.3, 0) {Layer 0\\Ingestion};
+
+%% 5 parallel agents
+\node[stage=blue] (CA)  at (\xPh+2.4,  2.2) {Complete-\\ness};
+\node[stage=blue] (COA) at (\xPh+2.4,  1.1) {Consis-\\tency};
+\node[stage=blue] (AA)  at (\xPh+2.4,  0.0) {Ambi-\\guity};
+\node[stage=blue] (LCA) at (\xPh+2.4, -1.1) {Logic\\Coh.};
+\node[stage=purple](IA) at (\xPh+2.4, -2.2) {Image\\CV};
+
+%% Parallel box
+\begin{pgfonlayer}{background}
+\node[par, fit=(CA)(COA)(AA)(LCA)(IA)] (PB) {};
+\end{pgfonlayer}
+\node[font=\footnotesize\itshape, text=blue!60] at (PB.north) [above=1pt]
+  {Parallel — LangGraph};
+
+%% Score engine
+\node[stage=orange] (SE) at (\xSE, 0) {Score\\Engine};
+
+%% Routing diamond
+\node[draw=orange!60, fill=orange!10, diamond, aspect=1.8,
+      minimum width=18mm, font=\footnotesize] (RT) at (\xRt, 0)
+  {VQS\\$\geq$0.65?};
+
+%% Outputs
+\node[stage=green!60!black] (OUT) at (\xOut,  0.8) {HITL /\\PLC Gen.};
+\node[stage=red!60!black]   (FAI) at (\xOut, -0.8) {FAIL /\\MAN. REV.};
+
+%% Arrows
+\draw[arr] (IN)  -- (ING);
+\draw[arr] (ING) -- (CA.west);
+\draw[arr] (ING) -- (COA.west);
+\draw[arr] (ING) -- (AA.west);
+\draw[arr] (ING) -- (LCA.west);
+\draw[arr] (ING) -- (IA.west);
+\draw[arr] (CA.east)  -- (SE);
+\draw[arr] (COA.east) -- (SE);
+\draw[arr] (AA.east)  -- (SE);
+\draw[arr] (LCA.east) -- (SE);
+\draw[arr] (IA.east)  -- (SE);
+\draw[arr] (SE) -- (RT);
+\draw[arr] (RT) -- node[above, font=\footnotesize]{Yes} (OUT);
+\draw[arr] (RT) -- node[below, font=\footnotesize]{No}  (FAI);
+
+\end{tikzpicture}
+\caption{CND-Verify pipeline execution. All five agents execute in parallel
+(LangGraph \texttt{parallel\_branch}). The Score Engine runs after all agent
+reports are complete, computes the VQS, and routes the document.}
+\label{fig:pipeline}
+\end{figure}
+
 Five agents execute over the shared \textit{VerificationState}. Each agent reads
 from the state, calls the LLM and/or knowledge base as needed, and writes a
 structured \textit{AgentReport} containing zero or more \textit{Finding}
@@ -461,6 +540,61 @@ Interlocks, or Alarms); and (3)~more than 20\% of prose-referenced tags absent
 from the tag inventory. When no hard-fail triggers, routing follows:
 $\text{VQS}\geq 0.85 \to$ AUTO\_PASS; $0.65\leq\text{VQS}<0.85 \to$
 NEEDS\_REVIEW; $\text{VQS}<0.65 \to$ FAIL.
+
+Fig.~\ref{fig:vqs} illustrates the VQS computation for a representative document
+containing two missing interlock fields (CRITICAL) and one missing alarm field
+(HIGH). Sub-scores are decremented proportionally to finding severity before
+being combined through the weighted formula.
+
+\begin{figure}[!t]
+\centering
+\begin{tikzpicture}[font=\small, >=Latex]
+
+%% Sub-score bars (horizontal)
+\def\bh{5mm}   % bar height
+\def\bw{42mm}  % full bar width = 1.0
+
+\foreach \lbl/\raw/\col/\y in {
+  Completeness ($w{=}0.28$)/0.40/blue/4,
+  Consistency ($w{=}0.28$)/0.95/teal/3,
+  Ambiguity ($w{=}0.24$)/0.85/violet/2,
+  Logic Coherence ($w{=}0.15$)/0.90/orange/1,
+  Image CV ($w{=}0.05$)/1.00/green!60!black/0
+}{
+  % Background (full bar, grey)
+  \fill[gray!15, draw=gray!30] (0, \y*7mm) rectangle (\bw, \y*7mm+\bh);
+  % Filled portion
+  \fill[\col!40, draw=\col!70]  (0, \y*7mm) rectangle (\raw*\bw, \y*7mm+\bh);
+  % Label left
+  \node[anchor=east, font=\footnotesize] at (-1mm, \y*7mm+\bh/2) {\lbl};
+  % Value right
+  \node[anchor=west, font=\footnotesize\bfseries] at (\bw+1mm, \y*7mm+\bh/2)
+    {\raw};
+}
+
+%% VQS result
+\node[draw=orange!60, fill=orange!12, rounded corners=3pt,
+      minimum width=52mm, minimum height=9mm, font=\footnotesize]
+  (vqsbox) at (\bw/2, -10mm)
+  {VQS $= 0.28{\times}0.40 + 0.28{\times}0.95 + 0.24{\times}0.85
+            + 0.15{\times}0.90 + 0.05{\times}1.00 = \mathbf{0.74}$};
+
+%% Routing outcome
+\node[draw=yellow!60!black, fill=yellow!15, rounded corners=3pt,
+      minimum width=38mm, minimum height=8mm, font=\footnotesize\bfseries]
+  (route) at (\bw/2, -20mm)
+  {Routing: NEEDS\_REVIEW};
+
+\draw[->, thick, gray!60] (vqsbox) -- (route);
+
+\end{tikzpicture}
+\caption{VQS computation example. Two missing interlock fields (CRITICAL,
+$-0.20$ each) reduce the Completeness sub-score to $1.0 - 0.40 = 0.60$;
+one missing alarm field (HIGH, $-0.10$) reduces it further to $0.40$.
+Other agents find only minor issues. The weighted sum of 0.74 falls in the
+NEEDS\_REVIEW band ($0.65 \leq \text{VQS} < 0.85$).}
+\label{fig:vqs}
+\end{figure}
 
 \subsection{Layers 4 and 5: HITL Interface and PLC Code Generation}
 
