@@ -376,7 +376,7 @@ def page_overview():
     vqs = (vstate or {}).get("vqs_scores", {})
 
     # ── KPI strip ─────────────────────────────────────────────────────────────
-    k0, k1, k2, k3, k4, k5, k6, k7 = st.columns(8)
+    k0, k1, k2, k3 = st.columns(4)
     docs_uploaded = len(st.session_state.uploaded_docs)
     docs_analyzed = len(st.session_state.analyzed_docs)
     critical_n = sum(1 for f in findings if f.get("severity") == "CRITICAL")
@@ -387,6 +387,8 @@ def page_overview():
     _kpi(k1, docs_analyzed,         "Docs Analyzed", "blue")
     _kpi(k2, len(st.session_state.exec_log), "Pipeline Runs")
     _kpi(k3, len(findings),         "Total Findings")
+
+    k4, k5, k6, k7 = st.columns(4)
     _kpi(k4, critical_n,            "Critical",   "red"   if critical_n else "")
     _kpi(k5, high_n,                "High",       "amber" if high_n else "")
     _kpi(k6, verified_n,            "Accepted",   "green" if verified_n else "")
@@ -517,7 +519,7 @@ def page_documents():
     if uploaded_files:
         for uf in uploaded_files:
             if uf.name not in st.session_state.uploaded_docs:
-                tmp_path = f"temp_{uf.name}"
+                tmp_path = f"temp_upload_{uf.name}"
                 with open(tmp_path, "wb") as fp:
                     fp.write(uf.getbuffer())
                 with st.spinner(f"Parsing {uf.name}…"):
@@ -945,8 +947,9 @@ def _finding_card_detailed(f: dict, vstate: dict):
     status_icon = {"OPEN": "⬜", "ACCEPTED": "✅", "REJECTED": "❌"}.get(cur, "⬜")
     border = {"CRITICAL": "#dc2626", "HIGH": "#ea580c", "WARNING": "#ca8a04", "INFO": "#2563eb"}.get(sev, "#e2e8f0")
 
+    sev_label = {"CRITICAL": "🔴 CRITICAL", "HIGH": "🟠 HIGH", "WARNING": "🟡 WARNING", "INFO": "🔵 INFO"}.get(sev, sev)
     with st.expander(
-        f"{status_icon} {_badge(sev)} {f.get('description','')[:90]}",
+        f"{status_icon} [{sev_label}]  {f.get('description','')[:90]}",
         expanded=(sev == "CRITICAL" and cur == "OPEN"),
     ):
         # ── Location bar ──────────────────────────────────────────────────────
@@ -1474,10 +1477,11 @@ def page_rules():
 
     for rule_name, rule_findings in sorted(rules_map.items()):
         n = len(rule_findings)
-        result = "FAIL" if any(f.get("severity") in ("CRITICAL","HIGH") for f in rule_findings) else \
+        result_label = "FAIL" if any(f.get("severity") in ("CRITICAL","HIGH") for f in rule_findings) else \
                  "WARN" if n > 0 else "PASS"
-        badge = f'<span class="badge badge-{result}">{result}</span>'
-        with st.expander(f"{badge} {rule_name} — {n} finding(s)", expanded=(result == "FAIL" and n > 0)):
+        result_icon = {"FAIL": "✗", "WARN": "⚠", "PASS": "✓"}.get(result_label, "·")
+        badge = f'<span class="badge badge-{result_label}">{result_label}</span>'
+        with st.expander(f"{result_icon} {rule_name} — {n} finding(s)", expanded=(result_label == "FAIL" and n > 0)):
             if not rule_findings:
                 st.markdown('<span style="color:#16a34a">✓ No violations found — rule passes.</span>', unsafe_allow_html=True)
             for f in rule_findings:
