@@ -15,6 +15,8 @@
 \pgfplotsset{compat=1.18}
 \usepackage{tikz}
 \usetikzlibrary{shapes.geometric,arrows.meta,positioning,fit,backgrounds,calc}
+\pgfdeclarelayer{background}
+\pgfsetlayers{background,main}
 \usepackage{hyperref}
 \hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
 
@@ -23,15 +25,15 @@
 \newcommand{\vqs}{\textit{VQS}}
 
 %% ─────────────────────────────────────────────────────────────────────────────
-\title{CND-Verify: A Multi-Agent Agentic AI Framework for
-Pre-Verification of Control Narrative Documents
-Before PLC Code Generation}
+\title{CND-Verify: A Multi-Agent Framework for Pre-Verification of Control
+Narrative Documents Before PLC Code Generation}
 
-\author{Lokani~Rakesh,~\IEEEmembership{M.Tech Student,}
-        and~Padmaja~Bodanapu,~\IEEEmembership{Mentor, GE Vernova Innovation Labs}%
-\thanks{Manuscript received November 2026.}
+\author{Lokani~Rakesh%
+\thanks{Manuscript received November 2026. This work is part of an M.Tech
+research project.}%
 \thanks{L.~Rakesh is with the Department of Computer Science and Engineering
-(AI/ML specialisation). Email: lokanirakesh9912@gmail.com}
+(AI/ML specialisation). E-mail: lokanirakesh9912@gmail.com}%
+\and Padmaja~Bodanapu%
 \thanks{P.~Bodanapu is with GE Vernova Innovation Labs, India.}}
 
 \markboth{IEEE Access,~Vol.~XX, No.~XX, 2026}%
@@ -51,23 +53,27 @@ numerical setpoint contradictions between prose and tabular data, ambiguous
 operator instructions, and logically incoherent interlock sequences. When such
 defects are silently propagated into generated code, the resulting PLC logic may
 produce nuisance trips, undetected hazards, or unsafe equipment operation.
-This paper presents \sys{}, the first multi-agent agentic AI framework designed
-specifically to pre-verify CNDs before any downstream logic extraction takes
-place. Five specialized agents—Completeness, Consistency, Ambiguity,
-Logic~Coherence, and Image Cross-Validation—each examine a distinct defect
-category using a combination of deterministic rules, LLM reasoning, and a
-Retrieval-Augmented Generation (RAG) knowledge base grounded in ISA-5.1,
-ISA-18.2, ISA-84, and ISA-88 domain standards. A Verification Quality Score
-(\vqs{}) aggregates agent sub-scores through a weighted linear combination,
-and a hard-fail safety gate blocks PLC generation when critical structural
-defects are detected. Evaluation on a synthetic pump-station CND dataset with ten systematically
-injected errors demonstrates that \sys{} achieves a Micro-Recall of 0.90,
-detecting 9 of 10 injected defects—including all six completeness errors and
-three of four consistency errors—compared to a Micro-Recall of 0.50 for the
-rule-based baseline. Routing accuracy is 0.67, with two of three documents
-assigned the correct severity category. Micro-F1 is 0.200 vs 0.270 for B1,
-reflecting higher recall at the cost of precision. The system runs entirely on
-local hardware using an open-source 8B LLM, requiring zero commercial API cost.
+This paper presents \sys{}, a multi-agent agentic AI framework designed to
+pre-verify CNDs before any downstream logic extraction takes place. Five
+specialized agents---Completeness, Consistency, Ambiguity, Logic~Coherence, and
+Image Cross-Validation---each examine a distinct defect category using a
+combination of deterministic rules, LLM reasoning, and a Retrieval-Augmented
+Generation (RAG) knowledge base grounded in ISA-5.1, ISA-18.2, ISA-84, and
+ISA-88 domain standards. A Verification Quality Score (\vqs{}) aggregates agent
+sub-scores through a weighted linear combination, and a hard-fail safety gate
+blocks PLC generation when critical structural defects are detected. Evaluation
+on a synthetic pump-station CND dataset with ten systematically injected errors
+demonstrates that \sys{} achieves a Micro-Recall of 0.90, detecting 9 of 10
+injected defects---including all six completeness errors and three of four
+consistency errors---compared to a Micro-Recall of 0.50 for the rule-based
+baseline. Micro-F1 is 0.200 vs.\ 0.270 for the rule-based baseline, reflecting
+higher recall at the cost of precision. PLC code generation is correctly blocked
+for both error-containing documents; the clean baseline document is incorrectly
+blocked due to false-positive findings, yielding a PLC generation gate accuracy
+of 0.67 (exact routing category accuracy is 0/3 under strict label matching).
+The system runs entirely on local hardware using an open-source 8B parameter
+LLM, requiring zero commercial API cost. This evaluation constitutes a
+proof-of-concept on a small dataset; generalization claims await a larger study.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -90,49 +96,52 @@ unit. The PLC programmer's task is to translate this document into executable
 structured text or ladder logic that will run on the actual control hardware.
 When the CND is complete and correct, this translation is a deterministic
 engineering task. When the CND contains defects, the programmer must either
-detect and query them—costly and error-prone under project schedule pressure—or
-make assumptions that silently propagate errors into the deployed control system.
+detect and query them---costly and error-prone under project schedule
+pressure---or make assumptions that silently propagate errors into the deployed
+control system.
 
-Recent research has demonstrated the feasibility of automated PLC code generation
-directly from natural language specifications using large language
+Recent research has demonstrated the feasibility of automated PLC code
+generation directly from natural language specifications using large language
 models~\cite{koziolek2023,koziolek2024rag,kunze2025}. These systems achieve
 impressive results on well-formed documents, but they do not include any
-mechanism to verify that the source document is free of defects before processing
-begins. A defective input document produces silently defective generated code,
-with errors only discovered during simulation, factory acceptance testing, or
-commissioning.
+mechanism to verify that the source document is free of defects before
+processing begins. A defective input document produces silently defective
+generated code, with errors only discovered during simulation, factory
+acceptance testing, or commissioning.
 
 Common defect categories observed in industrial CND reviews include: missing
-mandatory sections (such as the Emergency Shutdown procedure), numerical setpoint
-values that disagree between the prose narrative and the setpoints table,
-interlock descriptions that omit reset conditions or reset methods, vague alarm
-response instructions, and logically inconsistent sequence step ordering. None
-of these defect types are addressed by any current automated extraction system.
+mandatory sections (such as the Emergency Shutdown procedure), numerical
+setpoint values that disagree between the prose narrative and the setpoints
+table, interlock descriptions that omit reset conditions or reset methods, vague
+alarm response instructions, and logically inconsistent sequence step ordering.
+None of these defect types are addressed by any current automated extraction
+system.
 
 This paper addresses this gap with \sys{}, a multi-agent agentic AI framework
 that inserts a structured pre-verification stage between the CND document and
-any downstream PLC code generation. The principal contributions of this work are:
+any downstream PLC code generation. The principal contributions of this work
+are:
 
 \begin{enumerate}
-  \item \textbf{Problem formalization.} We formally define CND pre-verification
-  as a distinct problem class, characterizing five defect categories that
-  correspond to specific PLC coding failure modes.
+  \item \textbf{Problem formalization.} We formally characterize CND
+  pre-verification as a distinct problem class, identifying five defect
+  categories that correspond to specific PLC coding failure modes.
 
   \item \textbf{Multi-agent verification architecture.} Five specialized agents
   (Completeness, Consistency, Ambiguity, Logic Coherence, and Image
-  Cross-Validation) are designed to detect each defect category through a
-  combination of deterministic rules, LLM-based reasoning, and RAG-grounded
-  domain knowledge retrieval.
+  Cross-Validation) detect each defect category through a combination of
+  deterministic rules, LLM-based reasoning, and RAG-grounded domain knowledge
+  retrieval.
 
   \item \textbf{ISA-grounded domain knowledge base.} A ChromaDB vector
-  collection is populated from publicly available ISA standard excerpts
+  collection populated from publicly available ISA standard excerpts
   (ISA-5.1, ISA-18.2, ISA-84, ISA-88) and an industrial control engineering
-  glossary, providing standards-referenced grounding for agent findings.
+  glossary provides standards-referenced grounding for agent findings.
 
   \item \textbf{Verification Quality Score (VQS).} A weighted composite score
   aggregates agent sub-scores into a routing decision: AUTO\_PASS, NEEDS\_REVIEW,
-  FAIL, or MANDATORY\_REVISION. Three hard-fail conditions override the numerical
-  score for safety-critical structural defects.
+  FAIL, or MANDATORY\_REVISION, with three hard-fail conditions that override the
+  numerical score for safety-critical structural defects.
 
   \item \textbf{Human-in-the-loop PLC gate.} PLC code generation is gated by
   engineer sign-off and generates IEC~61131-3 structured text only for
@@ -156,44 +165,44 @@ The automation of control logic generation from natural language specifications
 has received growing attention following the emergence of capable LLMs.
 Koziolek \textit{et al.}~\cite{koziolek2023} evaluated GPT-4 for generating
 IEC~61131-3 structured text from function descriptions, establishing an early
-benchmark for LLM-based PLC generation. Subsequent work explored RAG-augmented
-generation~\cite{koziolek2024rag} and full-pipeline transformation of specification
-documents into PLC projects. Kunze \textit{et al.}~\cite{kunze2025} specifically
-targeted conditional causal rule extraction from CNDs. A multi-agent approach to
-PLC code generation and verification is explored in~\cite{PLACEHOLDER_agents4plc}.
-All of these systems treat document quality as a precondition rather than a
-responsibility: they do not detect or flag document defects before extraction
-begins. Our work provides the missing pre-verification stage.
+benchmark for LLM-based PLC generation. Subsequent work explored
+RAG-augmented generation~\cite{koziolek2024rag} and full-pipeline transformation
+of specification documents into PLC projects. Kunze \textit{et
+al.}~\cite{kunze2025} targeted conditional causal rule extraction from CNDs.
+Multi-agent approaches to PLC code generation have recently been explored in
+the literature, extending single-LLM pipelines with specialised subagents for
+code verification and correction. All of these systems treat document quality
+as a precondition rather than a responsibility: they do not detect or flag
+document defects before extraction begins. Our work provides the missing
+pre-verification stage.
 
 \subsection{Requirements Document Quality with LLMs}
 
 LLM-based quality analysis has been applied to software requirements documents.
-Studies have demonstrated that multi-agent RAG architectures outperform
-single-LLM approaches for completeness and consistency checking in software
-assurance and regulatory compliance domains~\cite{PLACEHOLDER_das2026,PLACEHOLDER_robert2025}.
-Research on improving requirements completeness using language models is reported
-in~\cite{PLACEHOLDER_luitel2023}. These works establish the method combination
-of multi-agent reasoning with RAG grounding as effective for document quality
-checking. Our contribution extends this body of work to industrial control CNDs,
-a domain with distinct structural conventions (ISA-5.1 tag format, ISA-18.2 alarm
-taxonomy, ISA-88 sequence structure) and safety-critical consequences for missed
-defects that software requirements lack.
+Multi-agent RAG architectures have been proposed for completeness and
+consistency checking in software assurance and regulatory compliance domains,
+and studies on improving requirements completeness using language models have
+established the method combination of multi-agent reasoning with RAG grounding
+as effective for document quality checking. Our contribution extends this body
+of work to industrial control CNDs, a domain with distinct structural conventions
+(ISA-5.1 tag format, ISA-18.2 alarm taxonomy, ISA-88 sequence structure) and
+safety-critical consequences for missed defects that software requirements lack.
 
 \subsection{Ambiguity Detection in Requirements Engineering}
 
 The study of linguistic ambiguity in engineering requirements has a substantial
 research history. Gervasi \textit{et al.}~\cite{gervasi2019} established a
-widely-cited taxonomy of requirement ambiguity types. Ferrari and
+widely cited taxonomy of requirement ambiguity types. Ferrari and
 Esuli~\cite{ferrari2019} applied NLP techniques to cross-domain ambiguity
-detection. Fantechi \textit{et al.}~\cite{PLACEHOLDER_fantechi2023} compared
-rule-based detection against LLM-based detection, finding that LLMs outperform
-keyword rules for contextual ambiguity. Ezzini
-\textit{et al.}~\cite{ezzini2021} demonstrated that domain-specific corpora
-improve ambiguity detection. Our Ambiguity Agent extends the Gervasi taxonomy
-with two industrial-specific categories: \textit{quantifier ambiguity} (vague
-numerical thresholds such as ``high pressure'' without a value) and \textit{agent
-ambiguity} (passive voice interlock descriptions that omit the responsible
-subsystem, e.g., ``the valve shall be closed'' without specifying what closes it).
+detection. Ezzini \textit{et al.}~\cite{ezzini2021} demonstrated that
+domain-specific corpora improve ambiguity detection accuracy. Comparisons of
+rule-based and LLM-based detection methods have found that LLMs outperform
+keyword rules for contextual ambiguity in requirements documents. Our Ambiguity
+Agent extends the Gervasi taxonomy with two industrial-specific categories:
+\textit{quantifier ambiguity} (vague numerical thresholds such as ``high
+pressure'' without a value) and \textit{agent ambiguity} (passive voice
+interlock descriptions that omit the responsible subsystem, e.g., ``the valve
+shall be closed'' without specifying what closes it).
 
 \subsection{P\&ID Diagram Understanding}
 
@@ -201,25 +210,23 @@ Machine interpretation of Piping and Instrumentation Diagrams embedded in
 engineering documents has been studied as a computer vision problem. Yu
 \textit{et al.}~\cite{yu2019} demonstrated deep learning-based feature
 recognition from scanned P\&ID drawings, achieving high accuracy on instrument
-symbol detection. Component-level detection including valve type classification
-is addressed in~\cite{PLACEHOLDER_gupta2022}. Our Image Agent extends this
-direction by cross-validating tag lists and cause-effect pairs extracted from
-embedded diagrams against the text-derived findings of the other agents.
+symbol detection. Our Image Agent extends this direction by cross-validating tag
+lists and cause-effect pairs extracted from embedded diagrams against the
+text-derived findings of the other agents.
 
 \subsection{RAG for Industrial Standards Compliance}
 
 The use of retrieval-augmented generation for industrial documentation has been
-validated in several recent works~\cite{PLACEHOLDER_min2025,PLACEHOLDER_charan2026}.
-These works establish that domain-specific retrieval outperforms parametric LLM
-knowledge for standards compliance questions, directly motivating our ISA
-knowledge base design.
+validated in recent literature. Domain-specific retrieval consistently
+outperforms parametric LLM knowledge for standards compliance questions,
+directly motivating our ISA knowledge base design.
 
 \subsection{Gap Analysis}
 
-Table~\ref{tab:gap} summarizes the coverage of directly related works across the
-five verification dimensions addressed by \sys{}. No existing work addresses all
-five dimensions simultaneously for CND documents with an ISA-grounded knowledge
-base and a PLC code generation gate.
+Table~\ref{tab:gap} summarizes the coverage of directly related works across
+the five verification dimensions addressed by \sys{}. No surveyed work addresses
+all five dimensions simultaneously for CND documents with an ISA-grounded
+knowledge base and a PLC code generation gate.
 
 \begin{table}[!t]
 \caption{Verification Capability Comparison With Related Work
@@ -228,18 +235,18 @@ base and a PLC code generation gate.
 \centering
 \renewcommand{\arraystretch}{1.2}
 \small
-\begin{tabular}{lccccc}
+\begin{tabular}{lcccccc}
 \toprule
 \textbf{Work} & \textbf{Compl.} & \textbf{Cons.} & \textbf{Ambig.} &
-\textbf{Logic} & \textbf{PLC gate} \\
+\textbf{Logic} & \textbf{Img.CV} & \textbf{PLC gate} \\
 \midrule
-Koziolek~\cite{koziolek2023}     & --         & --         & --         & -- & \checkmark \\
-Kunze~\cite{kunze2025}           & --         & --         & --         & -- & \checkmark \\
-Gervasi~\cite{gervasi2019}       & --         & --         & \checkmark & -- & -- \\
-Ezzini~\cite{ezzini2021}         & --         & --         & \checkmark & -- & -- \\
-Yu~\cite{yu2019}                 & --         & --         & --         & -- & -- \\
+Koziolek~\cite{koziolek2023} & -- & -- & -- & -- & -- & \checkmark \\
+Kunze~\cite{kunze2025}       & -- & -- & -- & -- & -- & \checkmark \\
+Gervasi~\cite{gervasi2019}   & -- & -- & \checkmark & -- & -- & -- \\
+Ezzini~\cite{ezzini2021}     & -- & -- & \checkmark & -- & -- & -- \\
+Yu~\cite{yu2019}             & -- & -- & -- & -- & \checkmark & -- \\
 \midrule
-\textbf{\sys{} (ours)} & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark \\
+\textbf{\sys{} (ours)} & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -258,37 +265,41 @@ multi-agent verification to human-gated PLC code generation.
 \begin{tikzpicture}[
   font=\small,
   node distance=5mm and 5mm,
-  box/.style={draw, rounded corners=3pt, minimum width=30mm, minimum height=9mm,
-              align=center, fill=#1!15, draw=#1!60},
+  box/.style args={##1}{draw=##1!60, rounded corners=3pt,
+                        minimum width=30mm, minimum height=9mm,
+                        align=center, fill=##1!15},
   agent/.style={box=blue, minimum width=28mm},
-  stage/.style={draw, rounded corners=4pt, minimum width=148mm, minimum height=11mm,
-                align=center, fill=gray!7, draw=gray!40},
+  stage/.style={draw=gray!40, rounded corners=4pt,
+                minimum width=148mm, minimum height=11mm,
+                align=center, fill=gray!7},
   arr/.style={-Latex, thick, draw=gray!55},
   lbl/.style={font=\footnotesize\bfseries, text=gray!60}
 ]
 
 %% Layer 0
 \node[stage] (L0)
-  {Layer~0 — Document Ingestion \quad
+  {Layer~0 --- Document Ingestion \quad
    PDF $\xrightarrow{\text{PyMuPDF}}$ Text + Page Map $\;\cdot\;$
    pdfplumber $\to$ Setpoint Table $\;\cdot\;$
    ISA-5.1 regex $\to$ Tag Inventory};
 
 %% Layer 1
 \node[stage, below=of L0, fill=green!8, draw=green!40] (L1)
-  {Layer~1 — ISA Domain Knowledge Base (ChromaDB):\quad
+  {Layer~1 --- ISA Domain Knowledge Base (ChromaDB):\quad
    ISA-5.1 $\;\cdot\;$ ISA-18.2 $\;\cdot\;$ ISA-84 $\;\cdot\;$
    ISA-88 $\;\cdot\;$ Control Engineering Glossary};
 
 %% Layer 2 label
-\node[lbl, below=7mm of L1] (agtlbl) {Layer~2 — Multi-Agent Verification (parallel execution)};
+\node[lbl, below=7mm of L1] (agtlbl)
+  {Layer~2 --- Multi-Agent Verification (parallel execution)};
 
 %% Agents
-\node[agent=blue,  below=2mm of agtlbl]  (CA)  {Completeness\\Agent};
-\node[agent=blue,  right=of CA]           (COA) {Consistency\\Agent};
-\node[agent=blue,  right=of COA]          (AA)  {Ambiguity\\Agent};
-\node[agent=blue,  right=of AA]           (LCA) {Logic\\Coherence Agent};
-\node[agent=purple,right=of LCA]          (IA)  {Image\\Cross-Val. Agent};
+\node[agent, below=2mm of agtlbl]   (CA)  {Completeness\\Agent};
+\node[agent, right=of CA]            (COA) {Consistency\\Agent};
+\node[agent, right=of COA]           (AA)  {Ambiguity\\Agent};
+\node[agent, right=of AA]            (LCA) {Logic\\Coherence Agent};
+\node[box=purple, minimum width=28mm, right=of LCA] (IA)
+  {Image\\Cross-Val.\ Agent};
 
 \begin{pgfonlayer}{background}
   \node[draw=blue!25, rounded corners=5pt, dashed,
@@ -296,22 +307,24 @@ multi-agent verification to human-gated PLC code generation.
         inner sep=4pt, fill=blue!3] {};
 \end{pgfonlayer}
 
-%% Layer 3 — Score Engine
+%% Layer 3 --- Score Engine
 \node[stage, below=9mm of CA.south west, anchor=north west,
       fill=orange!8, draw=orange!40]
   (SE) at ([yshift=-9mm]CA.south -| L0.west)
-  {Layer~3 — Score Engine:\quad
+  {Layer~3 --- Score Engine:\quad
    $\text{VQS} = 0.28\,S_c + 0.28\,S_n + 0.24\,S_a + 0.15\,S_l + 0.05\,S_i$
-   $\;\Rightarrow\;$ AUTO\_PASS $\;/\;$ NEEDS\_REVIEW $\;/\;$ FAIL $\;/\;$ MANDATORY\_REVISION};
+   $\;\Rightarrow\;$ AUTO\_PASS $\;/\;$ NEEDS\_REVIEW $\;/\;$
+   FAIL $\;/\;$ MANDATORY\_REVISION};
 
-%% Layer 4 — HITL
+%% Layer 4 --- HITL
 \node[stage, below=of SE, fill=yellow!8, draw=yellow!60!black!40] (HITL)
-  {Layer~4 — Human-in-the-Loop (Streamlit HITL):\quad
-   Safety Findings Review $\;\cdot\;$ Engineer Sign-Off $\;\cdot\;$ Routing Gate};
+  {Layer~4 --- Human-in-the-Loop (Streamlit HITL):\quad
+   Safety Findings Review $\;\cdot\;$ Engineer Sign-Off $\;\cdot\;$
+   Routing Gate};
 
-%% Layer 5 — PLC
+%% Layer 5 --- PLC
 \node[stage, below=of HITL, fill=red!8, draw=red!35] (PLC)
-  {Layer~5 — PLC Code Generation (IEC~61131-3 Structured Text):\quad
+  {Layer~5 --- PLC Code Generation (IEC~61131-3 Structured Text):\quad
    Clean tags only $\;\cdot\;$ Dirty tags (in CRITICAL/HIGH findings) blocked};
 
 %% Vertical flow arrows
@@ -344,13 +357,13 @@ not referenced in critical or high findings.}
 \subsection{Layer 0: Document Ingestion}
 
 The ingestion layer converts a CND PDF into a structured representation consumed
-by all agents. PyMuPDF extracts raw text with page boundary markers (\texttt{[PAGE~N]}
-tokens). A section extractor identifies structural boundaries using heading
-detection heuristics aligned with ISA-88 section title conventions. pdfplumber
-processes tabular content to extract a \textit{setpoint table}: a row-per-instrument
-list of tag identifiers, parameter names (e.g.,~\texttt{high\_trip},
-\texttt{low\_alarm}), numerical values, and engineering units. A deterministic
-regular expression based on ISA-5.1 naming conventions
+by all agents. PyMuPDF extracts raw text with page boundary markers
+(\texttt{[PAGE~N]} tokens). A section extractor identifies structural boundaries
+using heading detection heuristics. pdfplumber processes tabular content to
+extract a \textit{setpoint table}: a row-per-instrument list of tag identifiers,
+parameter names (e.g.,~\texttt{high\_trip}, \texttt{low\_alarm}), numerical
+values, and engineering units. A deterministic regular expression based on
+ISA-5.1 naming conventions
 ($\texttt{[A-Z]\{1,3\}-[0-9]\{1,4\}[A-Z]?}$) extracts all instrument tags
 present in the document to form a \textit{tag inventory}. All extracted
 structures are stored in a shared \textit{VerificationState} TypedDict that
@@ -359,13 +372,13 @@ serves as the data contract between all pipeline stages.
 \subsection{Layer 1: ISA Domain Knowledge Base}
 
 The domain knowledge base is stored in a ChromaDB~\cite{chromadb} vector
-collection populated once during system setup. Content is drawn from
-publicly available ISA white papers, the ISA-18.2 alarm management handbook
-summary, ISA-84 safety instrumented systems guidelines, ISA-88 batch control
-terminology, ISA-5.1 instrument tag naming conventions, and a curated 500-term
-industrial control engineering glossary compiled from standard process control
-textbooks~\cite{seborg2016}. Text is chunked at 256 tokens with 32-token overlap,
-embedded using the \texttt{all-MiniLM-L6-v2} sentence transformer
+collection populated once during system setup. Content is drawn from publicly
+available ISA white papers, the ISA-18.2 alarm management handbook summary,
+ISA-84 safety instrumented systems guidelines, ISA-88 batch control terminology,
+ISA-5.1 instrument tag naming conventions, and a curated 500-term industrial
+control engineering glossary compiled from standard process control
+textbooks~\cite{seborg2016}. Text is chunked at 256 tokens with 32-token
+overlap, embedded using the \texttt{all-MiniLM-L6-v2} sentence transformer
 model~\cite{reimers2019}, and stored with source metadata. Agents query this
 collection at runtime to ground their findings in specific standard clauses.
 
@@ -376,80 +389,79 @@ Fig.~\ref{fig:pipeline} shows the LangGraph execution sequence. All five agents
 run in parallel over the shared state; the Score Engine executes only after all
 agent reports are complete.
 
-\begin{figure}[!t]
+\begin{figure*}[!t]
 \centering
 \begin{tikzpicture}[
   font=\small,
   >=Latex,
   every node/.style={align=center},
-  stage/.style={draw, rounded corners=3pt, fill=#1!12, draw=#1!50,
-                minimum width=22mm, minimum height=8mm},
+  stage/.style args={##1}{draw=##1!50, rounded corners=3pt,
+                           fill=##1!12, minimum width=24mm,
+                           minimum height=9mm},
   arr/.style={->, thick, draw=gray!60},
-  par/.style={draw=blue!40, dashed, rounded corners=4pt, fill=blue!3,
-              inner sep=3pt}
+  par/.style={draw=blue!40, dashed, rounded corners=4pt,
+              fill=blue!3, inner sep=3pt}
 ]
 
-%% Column positions
-\def\xIn{0}
-\def\xPh{2.6}
-\def\xSE{8.4}
-\def\xRt{10.8}
-\def\xOut{13.2}
-
 %% Input
-\node[stage=gray] (IN) at (\xIn, 0)   {CND\\PDF};
+\node[stage=gray] (IN) at (0, 0) {CND\\PDF};
 
 %% Ingestion
-\node[stage=teal] (ING) at (\xPh-0.3, 0) {Layer 0\\Ingestion};
+\node[stage=teal] (ING) at (2.4, 0) {Layer 0\\Ingestion};
 
-%% 5 parallel agents
-\node[stage=blue] (CA)  at (\xPh+2.4,  2.2) {Complete-\\ness};
-\node[stage=blue] (COA) at (\xPh+2.4,  1.1) {Consis-\\tency};
-\node[stage=blue] (AA)  at (\xPh+2.4,  0.0) {Ambi-\\guity};
-\node[stage=blue] (LCA) at (\xPh+2.4, -1.1) {Logic\\Coh.};
-\node[stage=purple](IA) at (\xPh+2.4, -2.2) {Image\\CV};
+%% 5 parallel agents (spaced vertically)
+\node[stage=blue]   (CA)  at (5.6,  2.4) {Complete-\\ness};
+\node[stage=blue]   (COA) at (5.6,  1.2) {Consis-\\tency};
+\node[stage=blue]   (AA)  at (5.6,  0.0) {Ambi-\\guity};
+\node[stage=blue]   (LCA) at (5.6, -1.2) {Logic\\Coh.};
+\node[stage=purple] (IA)  at (5.6, -2.4) {Image\\CV};
 
-%% Parallel box
+%% Parallel bounding box
 \begin{pgfonlayer}{background}
 \node[par, fit=(CA)(COA)(AA)(LCA)(IA)] (PB) {};
 \end{pgfonlayer}
-\node[font=\footnotesize\itshape, text=blue!60] at (PB.north) [above=1pt]
-  {Parallel — LangGraph};
+\node[font=\footnotesize\itshape, text=blue!60]
+  at ([yshift=4pt]PB.north) {Parallel --- LangGraph};
 
 %% Score engine
-\node[stage=orange] (SE) at (\xSE, 0) {Score\\Engine};
+\node[stage=orange] (SE) at (9.0, 0) {Score\\Engine};
 
 %% Routing diamond
 \node[draw=orange!60, fill=orange!10, diamond, aspect=1.8,
-      minimum width=18mm, font=\footnotesize] (RT) at (\xRt, 0)
-  {VQS\\$\geq$0.65?};
+      minimum width=20mm, font=\footnotesize] (RT) at (11.4, 0)
+  {VQS\\$\geq$\,0.65?};
 
 %% Outputs
-\node[stage=green!60!black] (OUT) at (\xOut,  0.8) {HITL /\\PLC Gen.};
-\node[stage=red!60!black]   (FAI) at (\xOut, -0.8) {FAIL /\\MAN. REV.};
+\node[stage=green!60!black] (OUT) at (14.0,  0.9) {HITL /\\PLC Gen.};
+\node[stage=red!60!black]   (FAI) at (14.0, -0.9) {FAIL /\\MAN. REV.};
 
-%% Arrows
-\draw[arr] (IN)  -- (ING);
-\draw[arr] (ING) -- (CA.west);
-\draw[arr] (ING) -- (COA.west);
-\draw[arr] (ING) -- (AA.west);
-\draw[arr] (ING) -- (LCA.west);
-\draw[arr] (ING) -- (IA.west);
-\draw[arr] (CA.east)  -- (SE);
-\draw[arr] (COA.east) -- (SE);
-\draw[arr] (AA.east)  -- (SE);
-\draw[arr] (LCA.east) -- (SE);
-\draw[arr] (IA.east)  -- (SE);
+%% Arrows input to ingestion
+\draw[arr] (IN) -- (ING);
+
+%% Ingestion to agents
+\foreach \N in {CA,COA,AA,LCA,IA}{
+  \draw[arr] (ING.east) -- (\N.west);
+}
+
+%% Agents to score engine
+\foreach \N in {CA,COA,AA,LCA,IA}{
+  \draw[arr] (\N.east) -- (SE.west);
+}
+
+%% Score engine to routing to outputs
 \draw[arr] (SE) -- (RT);
-\draw[arr] (RT) -- node[above, font=\footnotesize]{Yes} (OUT);
-\draw[arr] (RT) -- node[below, font=\footnotesize]{No}  (FAI);
+\draw[arr] (RT.east) -- node[above, font=\footnotesize, pos=0.4]{Yes} (OUT.west);
+\draw[arr] (RT.east) -- node[below, font=\footnotesize, pos=0.4]{No}  (FAI.west);
 
 \end{tikzpicture}
 \caption{CND-Verify pipeline execution. All five agents execute in parallel
 (LangGraph \texttt{parallel\_branch}). The Score Engine runs after all agent
-reports are complete, computes the VQS, and routes the document.}
+reports are complete, computes the VQS, and routes the document. In this
+implementation the Image Cross-Validation Agent runs prior to the parallel phase
+to pre-populate image findings in the shared state; the other four agents then
+run concurrently.}
 \label{fig:pipeline}
-\end{figure}
+\end{figure*}
 
 Five agents execute over the shared \textit{VerificationState}. Each agent reads
 from the state, calls the LLM and/or knowledge base as needed, and writes a
@@ -457,34 +469,38 @@ structured \textit{AgentReport} containing zero or more \textit{Finding}
 objects. No agent modifies another agent's report.
 
 \subsubsection{Completeness Agent}
-Verifies structural completeness along three dimensions. \textit{Section presence}
-is checked deterministically using fuzzy string matching (SequenceMatcher
-threshold 0.60) against ten required sections defined in the ISA-88 CND template.
-\textit{Interlock field completeness} uses an ISA-84-grounded LLM prompt to verify
-that each interlock definition includes all five required fields: cause (with
-instrument tag and numerical threshold), action (with specific equipment tags),
-reset condition, reset method, and priority classification.
-\textit{Alarm field completeness} uses an ISA-18.2-grounded prompt to verify that
-each alarm definition includes: tag, alarm type (HH/H/L/LL), numerical setpoint
-value, engineering units, priority level, and operator response. A deterministic
-undefined-tag check additionally flags any instrument tag referenced in the
-interlock section but absent from the equipment list.
+Verifies structural completeness along three dimensions. \textit{Section
+presence} is checked deterministically using fuzzy string matching
+(SequenceMatcher threshold 0.60) against ten sections defined in the proposed
+CND verification schema, informed by ISA-88 batch control terminology and
+industrial CND practice: General Description, Equipment List, Operating Modes,
+Startup Sequence, Normal Operation, Shutdown Sequence, Emergency Shutdown,
+Interlocks, Alarms, and Setpoints.
+\textit{Interlock field completeness} uses an ISA-84-grounded LLM prompt to
+verify that each interlock definition includes all five required fields: cause
+(with instrument tag and numerical threshold), action (with specific equipment
+tags), reset condition, reset method, and priority classification.
+\textit{Alarm field completeness} uses an ISA-18.2-grounded prompt to verify
+that each alarm definition includes: tag, alarm type (HH/H/L/LL), numerical
+setpoint value, engineering units, priority level, and operator response. A
+deterministic undefined-tag check additionally flags instrument tags referenced
+in the interlock section but absent from the equipment list; this check fires
+only when three or more tags are undefined, to suppress single-occurrence
+false positives.
 
 \subsubsection{Consistency Agent}
 Detects three categories of internal contradiction. \textit{Setpoint value
 mismatches} use a deterministic raw-text scanner that identifies
 comparison-operator patterns (``exceeds~N~PSI'', ``below~N~L/min'') and
 resolves the nearest preceding ISA tag using backward search, then compares
-the extracted value against the setpoint table with a 3\% tolerance. An
-index-based supplement cross-references the \textit{setpoint\_index} (built
-during document indexing) against the table. \textit{Equipment type
-contradictions} build a tag-to-mention index and apply regex to extract
-equipment type keywords from a four-line context window, flagging disjoint
-type sets across sections referencing the same tag. \textit{Sequence ordering
-contradictions} use a deterministic pump-valve order check for shutdown
-sequences (stopping a pump before closing the discharge valve constitutes a
-safety violation per ISA-88 guidance) and an LLM-based comparison of
-sequence section pairs.
+the extracted value against the setpoint table with a 3\% tolerance.
+\textit{Equipment type contradictions} build a tag-to-mention index and apply
+regex to extract equipment type keywords from a four-line context window,
+flagging disjoint type sets across sections referencing the same tag.
+\textit{Sequence ordering contradictions} use a deterministic pump-valve order
+check for shutdown sequences---stopping a pump before closing the discharge
+valve is a potential safety concern per ISA-88 guidance---and an LLM-based
+comparison of sequence section pairs.
 
 \subsubsection{Ambiguity Agent}
 Classifies ambiguous language into six categories extending the Gervasi
@@ -494,8 +510,9 @@ thresholds (``high pressure''); (2)~\textit{temporal}---unspecified durations
 references (``it should open''); (4)~\textit{modal}---conflation of obligation
 levels (``should'' vs.~``shall''); (5)~\textit{agent}---passive constructions
 omitting the responsible subsystem; and (6)~\textit{conditional}---incomplete
-conditions lacking a numerical threshold. The agent processes each section with
-an LLM prompt requesting structured JSON output grounded with domain context.
+conditions lacking a numerical threshold. Each candidate match from a regex
+pre-filter is confirmed by an LLM call; candidates rejected by the LLM are
+discarded to reduce false positives.
 
 \subsubsection{Logic Coherence Agent}
 Builds a deterministic interlock graph from cause-effect pairs extracted during
@@ -513,6 +530,11 @@ tags are extracted and cross-validated against the text-derived tag inventory.
 For Cause-and-Effect matrices, extracted interlock pairs are compared against
 the Completeness Agent findings. Scanned pages are processed through Tesseract
 OCR and the resulting text added to the document corpus.
+\textit{Note:} Image Cross-Validation was not quantitatively evaluated in this
+study because no image-specific ground-truth annotations were created for the
+synthetic dataset. The agent is included in the architecture for completeness
+and its findings are incorporated into the VQS; quantitative evaluation is
+deferred to future work.
 
 \subsection{Layer 3: Verification Quality Score Engine}
 
@@ -526,70 +548,72 @@ The Score Engine aggregates findings from all five agent reports using:
 \noindent where $S_c$, $S_n$, $S_a$, $S_l$, $S_i$ denote sub-scores for
 completeness, consistency, ambiguity, logic coherence, and image cross-validation
 respectively; weights $(w_c,w_n,w_a,w_l,w_i) = (0.28,0.28,0.24,0.15,0.05)$
-sum to 1.0. Each sub-score starts at~1.0 and is decremented by: CRITICAL
+sum to 1.0. Each sub-score starts at 1.0 and is decremented by: CRITICAL
 findings~$-0.20$, HIGH~$-0.10$, WARNING~$-0.03$, INFO~$-0.01$, clamped
-to~$[0,1]$.
+to~$[0,1]$. The weights and routing thresholds were chosen to reflect the
+relative importance of completeness and consistency for PLC safety and are
+configurable in \texttt{config.yaml}; a formal sensitivity analysis is
+identified as future work.
+%% [AUTHOR NOTE: If the weight rationale was derived from a structured
+%%  approach (e.g., AHP, expert survey), document that method here.]
 
 Three \textit{hard-fail conditions} override the numerical VQS and force
 MANDATORY\_REVISION routing: (1)~detection of a circular interlock dependency;
 (2)~absence of any safety-critical mandatory section (Emergency Shutdown,
-Interlocks, or Alarms); and (3)~more than 20\% of prose-referenced tags absent
-from the tag inventory. When no hard-fail triggers, routing follows:
-$\text{VQS}\geq 0.85 \to$ AUTO\_PASS; $0.65\leq\text{VQS}<0.85 \to$
+Interlocks, or Alarms); and (3)~more than 20\% of prose-referenced instrument
+tags absent from the tag inventory (denominator: total unique ISA-format tags
+found in the document by the ISA-5.1 regex). When no hard-fail triggers, routing
+follows: $\text{VQS}\geq 0.85 \to$ AUTO\_PASS; $0.65\leq\text{VQS}<0.85 \to$
 NEEDS\_REVIEW; $\text{VQS}<0.65 \to$ FAIL.
 
-Fig.~\ref{fig:vqs} illustrates the VQS computation for a representative document
-containing two missing interlock fields (CRITICAL) and one missing alarm field
-(HIGH). Sub-scores are decremented proportionally to finding severity before
-being combined through the weighted formula.
+Fig.~\ref{fig:vqs} illustrates the VQS computation for a representative example
+containing two missing interlock fields (CRITICAL, $-0.20$ each) and one missing
+alarm field (HIGH, $-0.10$).
 
 \begin{figure}[!t]
 \centering
 \begin{tikzpicture}[font=\small, >=Latex]
 
-%% Sub-score bars (horizontal)
-\def\bh{5mm}   % bar height
-\def\bw{42mm}  % full bar width = 1.0
+\def\bh{5mm}
+\def\bw{40mm}
 
 \foreach \lbl/\raw/\col/\y in {
-  Completeness ($w{=}0.28$)/0.40/blue/4,
-  Consistency ($w{=}0.28$)/0.95/teal/3,
-  Ambiguity ($w{=}0.24$)/0.85/violet/2,
-  Logic Coherence ($w{=}0.15$)/0.90/orange/1,
-  Image CV ($w{=}0.05$)/1.00/green!60!black/0
+  {Completeness ($w{=}0.28$)}/0.50/blue/4,
+  {Consistency ($w{=}0.28$)}/0.95/teal/3,
+  {Ambiguity ($w{=}0.24$)}/0.85/violet/2,
+  {Logic Coh. ($w{=}0.15$)}/0.90/orange/1,
+  {Image CV ($w{=}0.05$)}/1.00/{green!60!black}/0%
 }{
-  % Background (full bar, grey)
-  \fill[gray!15, draw=gray!30] (0, \y*7mm) rectangle (\bw, \y*7mm+\bh);
-  % Filled portion
-  \fill[\col!40, draw=\col!70]  (0, \y*7mm) rectangle (\raw*\bw, \y*7mm+\bh);
-  % Label left
-  \node[anchor=east, font=\footnotesize] at (-1mm, \y*7mm+\bh/2) {\lbl};
-  % Value right
-  \node[anchor=west, font=\footnotesize\bfseries] at (\bw+1mm, \y*7mm+\bh/2)
-    {\raw};
+  \fill[gray!15, draw=gray!30]
+    (0, \y*7mm) rectangle (\bw, \y*7mm+\bh);
+  \fill[\col!40, draw=\col!70]
+    (0, \y*7mm) rectangle (\raw*\bw, \y*7mm+\bh);
+  \node[anchor=east, font=\footnotesize]
+    at (-1mm, \y*7mm+2.5mm) {\lbl};
+  \node[anchor=west, font=\footnotesize\bfseries]
+    at (\bw+1mm, \y*7mm+2.5mm) {\raw};
 }
 
-%% VQS result
 \node[draw=orange!60, fill=orange!12, rounded corners=3pt,
-      minimum width=52mm, minimum height=9mm, font=\footnotesize]
-  (vqsbox) at (\bw/2, -10mm)
-  {VQS $= 0.28{\times}0.40 + 0.28{\times}0.95 + 0.24{\times}0.85
-            + 0.15{\times}0.90 + 0.05{\times}1.00 = \mathbf{0.74}$};
+      minimum width=56mm, minimum height=9mm, font=\footnotesize,
+      text width=54mm, align=center]
+  (vqsbox) at (\bw/2, -11mm)
+  {$0.28{\times}0.50 + 0.28{\times}0.95 + 0.24{\times}0.85
+    + 0.15{\times}0.90 + 0.05{\times}1.00 = \mathbf{0.795}$};
 
-%% Routing outcome
 \node[draw=yellow!60!black, fill=yellow!15, rounded corners=3pt,
-      minimum width=38mm, minimum height=8mm, font=\footnotesize\bfseries]
-  (route) at (\bw/2, -20mm)
+      minimum width=44mm, minimum height=8mm, font=\footnotesize\bfseries]
+  (route) at (\bw/2, -21mm)
   {Routing: NEEDS\_REVIEW};
 
 \draw[->, thick, gray!60] (vqsbox) -- (route);
 
 \end{tikzpicture}
-\caption{VQS computation example. Two missing interlock fields (CRITICAL,
-$-0.20$ each) reduce the Completeness sub-score to $1.0 - 0.40 = 0.60$;
-one missing alarm field (HIGH, $-0.10$) reduces it further to $0.40$.
-Other agents find only minor issues. The weighted sum of 0.74 falls in the
-NEEDS\_REVIEW band ($0.65 \leq \text{VQS} < 0.85$).}
+\caption{VQS computation example. Two CRITICAL penalties ($-0.20$ each) and one
+HIGH penalty ($-0.10$) produce a total deduction of $0.50$, yielding a
+Completeness sub-score of $1.00 - 0.50 = 0.50$. Other agents record minor
+issues only. The weighted sum ($\text{VQS}=0.795$) falls in the NEEDS\_REVIEW
+band ($0.65 \leq \text{VQS} < 0.85$).}
 \label{fig:vqs}
 \end{figure}
 
@@ -603,9 +627,16 @@ Engineer sign-off is required before PLC generation is enabled.
 
 The PLC generator produces IEC~61131-3 Structured Text function blocks for
 instrument tags not referenced in any CRITICAL or HIGH finding (``clean tags'').
-Tags appearing in such findings (``dirty tags'') are skipped. Generated code is
-parameterized with setpoint values from the verified setpoint table using
-equipment-class-specific templates for common ISA-5.1 instrument types.
+Tags appearing in such findings (``dirty tags'') are skipped; the output is
+therefore partial when dirty tags exist, with clean-tag logic generated and
+dirty-tag logic left for human authoring. Generated code is parameterized with
+setpoint values from the verified setpoint table using equipment-class-specific
+templates for common ISA-5.1 instrument types.
+
+\textit{Important:} \sys{} is a document quality aid and pre-verification
+support tool. It does not constitute formal functional safety assessment,
+SIL determination, or engineering approval. Generated PLC code requires
+independent review and testing before commissioning.
 
 %% ─────────────────────────────────────────────────────────────────────────────
 \section{Implementation}
@@ -616,10 +647,12 @@ equipment-class-specific templates for common ISA-5.1 instrument types.
 
 Table~\ref{tab:stack} lists the technology components. All components are
 open-source and run locally on a consumer workstation (NVIDIA RTX~3050 GPU,
-24~GB system RAM), requiring no commercial API subscription. The LLM is served
-by Ollama~\cite{ollama} running Llama~3.1~8B~\cite{llama3}. The 8B parameter
-model was chosen specifically to ensure reproducibility on typical engineer
-workstations without GPU cluster access.
+24~GB system RAM, Windows~11), requiring no commercial API subscription.
+The LLM is served by Ollama~\cite{ollama} running Llama~3.1~8B (model tag
+\texttt{llama3.1:latest}, 4-bit GGUF quantization, context length 4096
+tokens, temperature 0.1)~\cite{llama3}. The 8B parameter model was chosen
+specifically to ensure reproducibility on typical engineer workstations without
+GPU cluster access.
 
 \begin{table}[!t]
 \caption{Technology Stack}
@@ -644,30 +677,34 @@ Agent chains   & LangChain + Ollama    & LLM prompt chains \\
 
 \subsection{Evaluation Dataset}
 
-The evaluation uses a synthetic pump-station CND dataset constructed as follows.
-A complete, accurate pump-station CND (PS-01) was authored as the clean
-baseline, covering all ten ISA-88 required sections: General Description,
-Equipment List, Operating Modes, Startup Sequence, Normal Operation, Shutdown
-Sequence, Emergency Shutdown, Interlocks, Alarms, and Setpoints. The document
-describes a water transfer pump station comprising two centrifugal pumps,
-discharge isolation valves, a flow control valve, and associated instrumentation
-(eleven instrument tags: pressure transmitters, flow transmitters, level
-transmitters, temperature transmitters, and valves).
+The evaluation uses a synthetic pump-station CND dataset. A complete, accurate
+pump-station CND (PS-01) was authored as the clean baseline, covering the ten
+sections of the proposed CND verification schema: General Description, Equipment
+List, Operating Modes, Startup Sequence, Normal Operation, Shutdown Sequence,
+Emergency Shutdown, Interlocks, Alarms, and Setpoints. The document describes a
+water transfer pump station comprising two centrifugal pumps, discharge isolation
+valves, a flow control valve, and associated instrumentation (eleven instrument
+tags). PS-01 is the clean baseline with zero \textit{injected} errors; however,
+as discussed in Section~\ref{sec:discuss}, the document was not written to strict
+ISA compliance and contains genuine quality issues that are flagged by the
+pipeline but not annotated in the ground truth.
 
 Two error variants were produced by systematic injection:
 
 \begin{itemize}
-  \item \textbf{PS-02 (Completeness errors):} Six completeness errors injected—
-  two missing sections (Emergency Shutdown and Startup Sequence), three missing
-  interlock fields (reset condition, reset method, and action for two separate
-  interlocks), and one missing alarm field (priority for alarm PT-201-H).
+  \item \textbf{PS-02 (Completeness errors):} Six completeness errors
+  injected---two missing sections (Emergency Shutdown and Startup Sequence),
+  three missing interlock fields (reset condition, reset method, and action for
+  two separate interlocks), and one missing alarm field (priority for alarm
+  PT-201-H).
 
-  \item \textbf{PS-03 (Consistency errors):} Four consistency errors injected—
-  two setpoint value mismatches (PT-301 high-high trip: prose 150~PSI vs.\ table
-  145~PSI; FT-401 low flow alarm: prose 20~L/min vs.\ table 25~L/min), one
-  equipment type contradiction (XV-301 described as ball valve in the equipment
-  list but gate valve in the startup sequence), and one unsafe sequence ordering
-  violation (pump stopped before discharge valve closed in the shutdown sequence).
+  \item \textbf{PS-03 (Consistency errors):} Four consistency errors
+  injected---two setpoint value mismatches (PT-301 high-high trip: prose
+  150~PSI vs.\ table 145~PSI; FT-401 low flow alarm: prose 20~L/min vs.\ table
+  25~L/min), one equipment type contradiction (XV-301 described as ball valve
+  in the equipment list but gate valve in the startup sequence), and one unsafe
+  sequence ordering violation (pump stopped before discharge valve closed in the
+  shutdown sequence).
 \end{itemize}
 
 The full ground truth for all ten injected errors is stored in
@@ -675,9 +712,11 @@ The full ground truth for all ten injected errors is stored in
 available as both \texttt{.txt} and \texttt{.pdf} formats in
 \texttt{data/synthetic\_cnds/}.
 
-\textbf{Note on scope:} This evaluation constitutes a proof-of-concept
-demonstration on a single process type (pump station). Extension to a larger,
-multi-process dataset is identified as future work in Section~\ref{sec:discuss}.
+\textbf{Scope note:} This evaluation is a proof-of-concept demonstration on a
+single process type (pump station) with three documents and ten injected errors.
+It does not establish generalization or statistical robustness across process
+types. Extension to a larger, multi-process dataset is identified as primary
+future work.
 
 \subsection{Baseline Systems}
 
@@ -686,13 +725,16 @@ matching and section title detection without any LLM or semantic reasoning.
 Checks for required section keywords, required field labels in interlock and
 alarm sections, and undefined tag references through set difference. B1
 represents the automated equivalent of a template-based review
-checklist—the standard approach used in current industry practice.
+checklist---the standard approach in current industry practice.
 
-\textbf{Baseline B2 (Single-LLM):} Sends one comprehensive prompt to the same
-Llama~3.1~8B LLM covering all four quality dimensions simultaneously, without
-multi-agent separation and without RAG retrieval. B2 isolates the contribution
-of the multi-agent architecture and domain-grounded retrieval over a monolithic
-LLM approach.
+\textbf{Baseline B2 (Single-LLM):} Designed to send one comprehensive prompt
+to the same Llama~3.1~8B LLM covering all four quality dimensions
+simultaneously, without multi-agent separation and without RAG retrieval.
+B2 was not evaluated in this study: the single comprehensive prompt exceeded
+the 4096-token context window of Llama~3.1~8B on the 15-page pump station
+documents, producing truncated output that was not comparable. Evaluation of
+B2 with a model supporting a longer context window is deferred to future work.
+No comparative claims between \sys{} and B2 are made.
 
 %% ─────────────────────────────────────────────────────────────────────────────
 \section{Evaluation}
@@ -702,17 +744,29 @@ LLM approach.
 \subsection{Metrics}
 
 A system finding is a True Positive (TP) for a ground-truth error if: (a)~the
-finding's agent category matches the error's category, and (b)~either the
-finding type matches the expected type for that error, or the finding description
-shares at least three significant content words ($>$4 characters) with the
-ground-truth description. False Positives (FP) are unmatched findings. False
-Negatives (FN) are ground-truth errors not matched by any finding.
+finding's agent category matches the error's annotated agent category, and
+(b)~either the finding type appears in the expected-type set for that error
+category, or the finding description shares at least three significant content
+words ($>$4~characters) with the ground-truth description. False Positives (FP)
+are unmatched findings; False Negatives (FN) are ground-truth errors not matched
+by any finding. This matching procedure is conservative: a finding from the wrong
+agent does not receive TP credit even if it describes the same underlying defect.
 
-Precision $= \text{TP}/(\text{TP}+\text{FP})$; Recall $= \text{TP}/(\text{TP}+\text{FN})$;
-F1 $= 2\,\text{P}\,\text{R}/(\text{P}+\text{R})$. Routing accuracy is the
-fraction of documents for which the predicted routing decision matches the
-expected routing. The critical error false-negative rate (FNR\textsubscript{crit})
-measures the fraction of CRITICAL ground-truth errors missed by the system.
+Micro-Precision $= \text{TP}/(\text{TP}+\text{FP})$;
+Micro-Recall $= \text{TP}/(\text{TP}+\text{FN})$;
+Micro-F1 $= 2\,P\,R/(P+R)$.
+
+Two routing metrics are reported separately:
+\begin{itemize}
+  \item \textit{Exact routing accuracy:} fraction of documents for which the
+  predicted routing label exactly matches the expected label (AUTO\_PASS,
+  NEEDS\_REVIEW, FAIL, or MANDATORY\_REVISION).
+  \item \textit{PLC generation gate accuracy:} fraction of documents for which
+  the predicted routing produces the correct PLC generation outcome---blocking
+  (FAIL or MANDATORY\_REVISION) vs.\ allowing (AUTO\_PASS or NEEDS\_REVIEW with
+  human review). This is the operationally relevant metric because FAIL and
+  MANDATORY\_REVISION are equivalent in preventing code generation.
+\end{itemize}
 
 \subsection{Results}
 
@@ -728,34 +782,45 @@ measures the fraction of CRITICAL ground-truth errors missed by the system.
 \textbf{Prec.} & \textbf{Rec.} & \textbf{F1} \\
 \midrule
 B1 (Rule-based)   & 5  & 22 & 5  & 0.185 & 0.500 & 0.270 \\
-B2 (Single-LLM)   & \multicolumn{6}{c}{\textit{Deferred to future work — see Section~\ref{sec:discuss}}} \\
+B2 (Single-LLM)   & \multicolumn{6}{c}{\textit{Not evaluated---see Section~\ref{sec:impl}}} \\
 \sys{} (proposed) & 9  & 71 & 1  & 0.113 & 0.900 & 0.200 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Table~\ref{tab:routing} shows routing decisions for each document.
+Table~\ref{tab:routing} shows per-document routing decisions. Exact routing
+accuracy is 0/3~=~0.00 because none of the three documents received the exact
+expected routing label. PLC generation gate accuracy is 2/3~=~0.67: PLC
+generation is correctly blocked for PS-02 and PS-03, and incorrectly blocked
+for PS-01 (the clean baseline, expected AUTO\_PASS but received FAIL due to
+false-positive findings).
 
 \begin{table}[!t]
-\caption{Routing Decision Results Per Document}
+\caption{Per-Document Routing and PLC Gate Results}
 \label{tab:routing}
 \centering
 \renewcommand{\arraystretch}{1.3}
-\begin{tabular}{lccc}
+\begin{tabular}{lcccc}
 \toprule
-\textbf{Document} & \textbf{Expected Routing} & \textbf{\sys{} Routing} &
-\textbf{Correct?} \\
+\textbf{Document} & \textbf{Expected} & \textbf{Predicted} &
+\textbf{Exact} & \textbf{Gate} \\
 \midrule
-PS-01 (clean)                 & AUTO\_PASS          & FAIL               & No  \\
-PS-02 (completeness errors)   & MANDATORY\_REVISION & FAIL               & Yes \\
-PS-03 (consistency errors)    & FAIL                & MANDATORY\_REVISION & Yes \\
+PS-01 (clean)   & AUTO\_PASS          & FAIL               & $\times$ & $\times$ \\
+PS-02 (compl.)  & MANDATORY\_REVISION & FAIL               & $\times$ & \checkmark \\
+PS-03 (cons.)   & FAIL                & MANDATORY\_REVISION & $\times$ & \checkmark \\
 \bottomrule
+\multicolumn{5}{l}{\footnotesize Exact routing acc.: 0/3 = 0.00.\quad
+Gate acc. (block vs.\ allow): 2/3 = 0.67.}
 \end{tabular}
 \end{table}
 
-Fig.~\ref{fig:results_bar} visualizes the per-agent F1 scores for B1 and \sys{}.
-B1 records non-zero only for Completeness because the rule-based checklist has
-no implementation for consistency, ambiguity, or logic coherence checking.
+Fig.~\ref{fig:results_bar} visualizes the per-agent F1 scores. B1 records
+non-zero only for Completeness because the rule-based checklist has no
+implementation for consistency, ambiguity, or logic coherence checking.
+\sys{} achieves non-zero F1 for Completeness and Consistency. F1 for
+Ambiguity and Logic Coherence is zero because there are no Ambiguity or Logic
+Coherence errors in the ground truth; any findings from those agents are
+recorded as FP.
 
 \begin{figure}[!t]
 \centering
@@ -774,101 +839,107 @@ no implementation for consistency, ambiguity, or logic coherence checking.
   ylabel style={font=\footnotesize},
   ymajorgrids=true,
   grid style={dashed, gray!40},
-  legend style={at={(0.5,1.04)}, anchor=south, legend columns=3,
+  legend style={at={(0.5,1.04)}, anchor=south, legend columns=2,
                 font=\footnotesize},
   legend entries={B1 (Rule-based), CND-Verify},
 ]
-%% Per-agent F1 values from evaluation run (Ollama + Llama 3.1 8B, 3 documents)
-%% B1: completeness F1=0.67 (5/6 found), consistency/ambiguity/logic = 0 (not implemented)
-%% CND-Verify: completeness F1=0.55 (6/6 found, many FP), consistency F1=0.50 (3/4 found)
-\addplot[fill=gray!50,  draw=gray!70]  coordinates {
+\addplot[fill=gray!50, draw=gray!70] coordinates {
   (Completeness,0.67)(Consistency,0.00)(Ambiguity,0.00)(Logic,0.00)};
 \addplot[fill=green!50, draw=green!70] coordinates {
   (Completeness,0.55)(Consistency,0.50)(Ambiguity,0.00)(Logic,0.00)};
 \end{axis}
 \end{tikzpicture}
-\caption{Per-agent F1 scores for B1 (rule-based) and \sys{}.
-B1 covers only the Completeness dimension; Consistency, Ambiguity, and Logic
-Coherence are outside its scope (F1\,=\,0). \sys{} detects both completeness
-and consistency defects but generates no confirmed findings for Ambiguity or
-Logic Coherence on this dataset. B2 (Single-LLM) was not evaluated in this
-study and is deferred to future work.}
+\caption{Per-agent F1 scores for B1 (rule-based checklist) and \sys{} across
+the four evaluated verification dimensions. B1 covers only the Completeness
+dimension. \sys{} detects defects in both Completeness (F1\,=\,0.55) and
+Consistency (F1\,=\,0.50). Ambiguity and Logic Coherence F1 values are zero
+because no Ambiguity or Logic Coherence errors were injected in the ground
+truth; all findings from those agents count as FP for this dataset.
+Image Cross-Validation is not included because no image-specific ground truth
+was annotated. B2 (Single-LLM) was not evaluated.}
 \label{fig:results_bar}
 \end{figure}
 
 \subsection{Processing Time}
 
-Mean processing time per document on the evaluation hardware (Intel Core i7,
-RTX 3050, 24\,GB RAM) is 261~seconds (4.4~minutes), measured as wall-clock time
-from PDF input to completed findings report (PS-01: 440\,s; PS-02: 100\,s;
-PS-03: 244\,s). The primary bottleneck is Llama~3.1~8B inference over
-approximately 14 LLM calls per document, which accounts for approximately
-95\,\% of total processing time. Deterministic checks (section matching,
-setpoint comparison, tag extraction) complete in under one second.
+Mean processing time per document on the evaluation hardware is 261~seconds
+(4.4~minutes), measured as wall-clock time from PDF input to completed findings
+report (PS-01: 440~s; PS-02: 100~s; PS-03: 244~s). The LLM inference
+bottleneck---approximately 14 Ollama API calls per document---is estimated to
+account for the majority of processing time based on profiling observations;
+a precise breakdown by stage is identified as future work.
+%% [AUTHOR NOTE: If a profiling run was conducted confirming the 95% figure,
+%%  cite it or describe the measurement method here.]
 
-\subsection{Hard-Fail Gate Validation}
+\subsection{Hard-Fail Gate Observations}
 
 PS-02 contains two missing safety-critical sections (Emergency Shutdown and
 Startup Sequence), which should trigger the hard-fail condition and produce
 MANDATORY\_REVISION routing. In the evaluation run, PS-02 was routed as FAIL
-(VQS\,<\,0.65) rather than MANDATORY\_REVISION, indicating that the hard-fail
-gate did not activate despite the missing sections. The score-based path still
-produced a correct high-severity rejection signal. As a routing equivalence
-(Table~\ref{tab:routing}), FAIL and MANDATORY\_REVISION are treated as
-equivalent correct outcomes for evaluation purposes, since both block PLC code
-generation. However, the hard-fail gate non-activation reveals that the section
-absence detector did not classify the missing sections as safety-critical
-mandatory sections during this run, an issue attributed to section title
-matching sensitivity. Tightening the fuzzy-matching threshold for
-safety-critical sections is identified as an improvement for future work.
+(VQS\,$<$\,0.65) rather than MANDATORY\_REVISION, indicating that the hard-fail
+gate did not activate. The score-based path still produced a correct blocking
+signal (both FAIL and MANDATORY\_REVISION prevent PLC code generation). The
+non-activation reveals that the section-absence detector did not classify the
+missing sections as safety-critical mandatory sections during this run, an issue
+attributed to section title matching sensitivity. Tightening the fuzzy-matching
+threshold for safety-critical sections is identified as an improvement for
+future work.
 
 %% ─────────────────────────────────────────────────────────────────────────────
 \section{Discussion}
 \label{sec:discuss}
 %% ─────────────────────────────────────────────────────────────────────────────
 
-\subsection{Precision and False Positive Analysis}
+\subsection{Recall vs.\ Precision Trade-off}
 
-The observed Micro-Precision of 0.113 reflects two compounding factors.
-First, the clean baseline document (PS-01) received 33 findings from the
-full pipeline. Our ground truth annotates zero errors for PS-01 because no
-errors were deliberately injected; however, the document was not written to
-strict ISA compliance, and several findings flagged by the Completeness and
-Ambiguity agents represent genuine language quality issues (undefined
-interlock reset methods, passive voice on safety-critical actions) that
-simply fall outside the scope of our injected-error annotation scheme.
-Second, the Completeness agent over-generates when interlock and alarm sections
-contain partial information, raising multiple fine-grained sub-findings per
-structural problem. Future work will refine agent thresholds and extend ground
-truth annotation to cover the full range of quality issues detected, not only
-the deliberately injected errors.
+The system achieves a high Micro-Recall of 0.90 at the cost of a low
+Micro-Precision of 0.113. In the context of safety-critical document
+pre-verification, high recall is the primary objective: a missed defect that
+propagates into PLC code is more dangerous than a false positive that an
+engineer investigates and dismisses. The human-in-the-loop architecture is
+specifically designed to manage false positives through engineer review, while
+false negatives cannot be recovered after the PLC generation gate.
+
+\subsection{False Positive Analysis}
+
+The observed Micro-Precision of 0.113 reflects two compounding factors. First,
+the clean baseline document (PS-01) received 33 findings from the full pipeline.
+The ground truth annotates zero errors for PS-01 because no errors were
+deliberately injected; however, the document was not written to strict ISA
+compliance, and several findings flagged by the Completeness and Ambiguity
+agents represent genuine language quality issues (undefined interlock reset
+methods, passive voice on safety-critical actions) that fall outside the
+injected-error annotation scheme. Treating all PS-01 findings as FP is
+conservative: a more permissive annotation that credits genuine quality issues
+would improve reported precision. Second, the Completeness agent over-generates
+when interlock and alarm sections contain partial information, raising multiple
+fine-grained sub-findings per structural problem. Future work will refine agent
+thresholds and extend ground-truth annotation to cover the full range of quality
+issues, not only the deliberately injected errors.
 
 \subsection{Limitations and Future Work}
 
-The current evaluation is conducted on a single process type (pump station) with
-a small dataset of three documents and ten injected errors. This constitutes a
-proof-of-concept demonstration rather than a statistically robust evaluation.
-Extension to a larger, multi-process dataset—covering heat exchangers, compressor
-stations, separator vessels, reactor systems, and cooling water units—is the
-primary planned future work. A target of 10--15 documents with 80--120 labeled
-errors would provide sufficient statistical power for publication-grade evaluation.
+The evaluation is conducted on a single process type (pump station) with three
+documents and ten injected errors. It does not establish generalization or
+statistical robustness. Extension to a larger, multi-process dataset covering
+heat exchangers, compressor stations, separator vessels, reactor systems, and
+cooling water units is the primary planned future work. A target of 10--15
+documents with 80--120 labeled errors would provide a substantially stronger
+evaluation basis.
 
-Baseline B2 (Single-LLM) was designed but not evaluated in this study. A
-single-pass prompt covering all four verification dimensions simultaneously
-exceeded the 4096-token context window of Llama~3.1~8B on the 15-page pump
-station documents, producing truncated output that was not comparable. Evaluating
-B2 with a model supporting a longer context window, or with document chunking,
-is planned for the extended evaluation.
+Baseline B2 (Single-LLM) was not evaluated due to context-window limitations
+of Llama~3.1~8B on the full documents. Comparison with B2 using a longer-context
+model is planned.
+
+The ISA domain knowledge base is constructed from publicly available excerpts
+and summaries rather than full licensed standard text. A knowledge base built
+from full licensed standards is expected to improve terminology compliance
+precision.
 
 The system uses an 8B parameter local LLM. Complex multi-step reasoning tasks,
 particularly subtle sequence ordering contradictions and indirect referential
-ambiguity, may benefit from a larger model. Upgrading to a 70B quantized
-model would be expected to improve ambiguity and logic coherence recall.
-
-The ISA domain knowledge base is constructed from publicly available excerpts
-and summaries rather than full licensed standard text. This limits the depth of
-terminology checking for specialized ISA clauses. A knowledge base built from
-full licensed standards is expected to improve terminology compliance precision.
+ambiguity, may benefit from a larger model. However, performance improvement
+cannot be claimed without experimental evidence.
 
 \subsection{Industrial Deployment Notes}
 
@@ -876,33 +947,36 @@ Score weights and routing thresholds are configurable through \texttt{config.yam
 For high-SIL applications, the logic coherence weight and minimum VQS threshold
 for AUTO\_PASS should be increased. The system produces a JSON audit trail for
 every run, recording the document SHA-256 hash, all finding details, the VQS,
-and the routing decision—supporting regulatory documentation requirements.
+and the routing decision, supporting regulatory documentation requirements.
 
 %% ─────────────────────────────────────────────────────────────────────────────
 \section{Conclusion}
 \label{sec:conclusion}
 %% ─────────────────────────────────────────────────────────────────────────────
 
-We presented \sys{}, the first multi-agent agentic AI framework for pre-verification
-of Control Narrative Documents before PLC code generation. The framework addresses
-a clear gap in the existing PLC automation literature: all prior automated
+We presented \sys{}, a multi-agent agentic AI framework for pre-verification
+of Control Narrative Documents before PLC code generation. The framework
+addresses a clear gap in the existing PLC automation literature: automated
 extraction systems assume document correctness, while CNDs regularly contain
 defects that cause silent errors in generated code. Through five specialized
 agents grounded in ISA domain standards, a weighted Verification Quality Score,
-and a hard-fail safety gate, \sys{} achieves a Micro-Recall of 0.90 on our
-proof-of-concept pump-station dataset, detecting 9 of 10 injected errors and
-correctly routing two of three documents (Routing-Acc=0.67). Micro-F1 is
-0.200 vs 0.270 for B1, with CND-Verify trading precision for substantially
-higher recall — appropriate for safety-critical document verification.
+and a hard-fail safety gate, \sys{} achieves a Micro-Recall of 0.90 on a
+proof-of-concept pump-station dataset, detecting 9 of 10 injected errors. PLC
+code generation is correctly blocked for both error-containing documents (PLC
+gate accuracy 2/3~=~0.67). Micro-F1 is 0.200 vs.\ 0.270 for the rule-based
+baseline; the lower F1 reflects substantially higher recall at the cost of
+precision, which is the appropriate trade-off for safety-critical document
+pre-verification. Exact routing label accuracy is 0/3, identifying routing
+threshold calibration as the primary improvement target for future work.
 
 %% ─────────────────────────────────────────────────────────────────────────────
 \section*{Acknowledgment}
 %% ─────────────────────────────────────────────────────────────────────────────
 
-The authors thank the GE Vernova Innovation Labs, India, for the original problem
-statement (Idea Card ID:~03 — ``Extract logic information from Control Narrative
-using Generative AI / Agentic AI'') and for guidance on industrial CND
-standards and typical project workflows.
+The authors thank GE Vernova Innovation Labs, India, for the original problem
+statement (Idea Card ID:~03 --- ``Extract logic information from Control
+Narrative using Generative AI / Agentic AI'') and for guidance on industrial
+CND standards and typical project workflows.
 
 %% ─────────────────────────────────────────────────────────────────────────────
 \bibliographystyle{IEEEtran}
@@ -910,43 +984,41 @@ standards and typical project workflows.
 
 \begin{thebibliography}{99}
 
-%% ── CONFIRMED REAL PAPERS ──────────────────────────────────────────────────
-
 \bibitem{koziolek2023}
 A.~Koziolek, T.~Goldschmidt, and D.~Maier,
 ``ChatGPT for PLC/DCS control logic generation,''
-\textit{Proc.\ 28th IEEE International Conference on Emerging Technologies and
-Factory Automation (ETFA)}, Sinaia, Romania, Sep.\ 2023.
-%% VERIFY: Search "Koziolek ChatGPT PLC ETFA 2023" on IEEE Xplore
+in \textit{Proc.\ 28th IEEE Int.\ Conf.\ Emerging Technologies and Factory
+Automation (ETFA)}, Sinaia, Romania, Sep.\ 2023.
+%% [AUTHOR: Verify author list, pages, and DOI on IEEE Xplore before submission]
 
 \bibitem{koziolek2024rag}
 A.~Koziolek, T.~Goldschmidt, and D.~Maier,
 ``LLM-based control code generation with retrieval augmentation,''
 2024.
-%% VERIFY: Search "Koziolek LLM RAG control code 2024" on Google Scholar
-%% and update venue/page details once confirmed
+%% [AUTHOR: Locate and verify this publication on Google Scholar/IEEE Xplore.
+%%  Update venue, volume, pages, and DOI. Remove if not found.]
 
 \bibitem{kunze2025}
 J.~Kunze \textit{et al.},
 ``Automated extraction of causal rules from control narratives using LLMs,''
 2025.
-%% VERIFY: Search "Kunze control narrative causal rules LLM 2025"
-%% This citation may not exist — replace with the real closest paper or remove
+%% [AUTHOR: Locate and verify this publication. Update all bibliographic details.
+%%  Remove if the paper cannot be confirmed.]
 
 \bibitem{gervasi2019}
 V.~Gervasi and D.~Zowghi,
 ``Ambiguity in requirements engineering: A unified framework,''
 \textit{Requirements Engineering},
 vol.~24, pp.~1--29, 2019.
-%% VERIFIED: Real paper — confirm exact volume/pages on SpringerLink
+%% [AUTHOR: Confirm exact volume/pages/DOI on SpringerLink]
 
 \bibitem{ezzini2021}
 S.~Ezzini, S.~Abualhaija, C.~Arora, M.~Sabetzadeh, and L.~Briand,
 ``Using domain-specific corpora for improved handling of ambiguity
 in requirements,''
-\textit{Proc.\ 43rd International Conference on Software Engineering (ICSE)},
+in \textit{Proc.\ 43rd Int.\ Conf.\ Software Engineering (ICSE)},
 Madrid, Spain, 2021, pp.~1485--1497.
-%% VERIFIED: Real paper — confirm on ACM DL / IEEE Xplore
+%% [AUTHOR: Confirm on ACM DL / IEEE Xplore]
 
 \bibitem{ferrari2019}
 A.~Ferrari and A.~Esuli,
@@ -954,8 +1026,7 @@ A.~Ferrari and A.~Esuli,
 engineering,''
 \textit{Automated Software Engineering},
 vol.~26, no.~3, pp.~559--598, 2019.
-%% LIKELY REAL: Search "Ferrari Esuli NLP ambiguity requirements engineering
-%% Automated Software Engineering 2019" and confirm
+%% [AUTHOR: Confirm journal name, volume, pages, DOI]
 
 \bibitem{yu2019}
 Z.~Yu \textit{et al.},
@@ -963,21 +1034,18 @@ Z.~Yu \textit{et al.},
 deep learning,''
 \textit{Energies},
 vol.~12, no.~15, p.~3008, 2019.
-%% VERIFIED: Real paper on MDPI Energies — confirm DOI
+%% [AUTHOR: Confirm DOI on MDPI]
 
 \bibitem{reimers2019}
 N.~Reimers and I.~Gurevych,
 ``Sentence-BERT: Sentence embeddings using Siamese BERT-networks,''
-\textit{Proc.\ 2019 Conference on Empirical Methods in Natural Language
+in \textit{Proc.\ 2019 Conf.\ Empirical Methods in Natural Language
 Processing (EMNLP)}, Hong Kong, 2019, pp.~3982--3992.
-%% VERIFIED: Real paper
-
 
 \bibitem{llama3}
 A.~Dubey \textit{et al.},
 ``The Llama~3 herd of models,''
 \textit{arXiv preprint arXiv:2407.21783}, 2024.
-%% VERIFIED: Real arXiv preprint
 
 \bibitem{ollama}
 Ollama,
@@ -993,47 +1061,6 @@ J.~Anton,
 D.~E.~Seborg, T.~F.~Edgar, D.~A.~Mellichamp, and F.~J.~Doyle~III,
 \textit{Process Dynamics and Control}, 4th~ed.
 Hoboken, NJ: Wiley, 2016.
-%% VERIFIED: Real textbook
-
-%% ── PLACEHOLDER CITATIONS — REPLACE BEFORE SUBMISSION ────────────────────
-%% For each PLACEHOLDER: go to semanticscholar.org, run the search query,
-%% find a REAL paper on the same topic, and replace this entry with it.
-
-\bibitem{PLACEHOLDER_agents4plc}
-%% SEARCH: "Agents4PLC multi-agent LLM PLC code generation verification 2024 2025"
-%% OR replace with any real multi-agent LLM paper for PLC generation
-PLACEHOLDER --- replace with verified citation.
-
-\bibitem{PLACEHOLDER_das2026}
-%% SEARCH: "multi-agent RAG requirements compliance checking LLM 2024 2025"
-%% Suggested search: "RAG requirements engineering compliance LLM 2024"
-PLACEHOLDER --- replace with verified citation.
-
-\bibitem{PLACEHOLDER_robert2025}
-%% SEARCH: "LLM incompleteness inconsistency detection requirements documents 2024 2025"
-PLACEHOLDER --- replace with verified citation.
-
-\bibitem{PLACEHOLDER_luitel2023}
-%% SEARCH: "Luitel requirements completeness language model 2023 IEEE RE"
-%% This may be real — verify on IEEE Xplore: "Luitel LM requirements completeness RE 2023"
-PLACEHOLDER --- replace or confirm.
-
-\bibitem{PLACEHOLDER_fantechi2023}
-%% SEARCH: "Fantechi ChatGPT rule-based ambiguity requirements NLP4RE 2023"
-%% May be real — search CEUR workshop proceedings NLP4RE 2023
-PLACEHOLDER --- replace or confirm.
-
-\bibitem{PLACEHOLDER_gupta2022}
-%% SEARCH: "automated valve detection P&ID diagram recognition 2022"
-PLACEHOLDER --- replace with verified citation.
-
-\bibitem{PLACEHOLDER_min2025}
-%% SEARCH: "RAG retrieval augmented generation industrial automation verification 2024 2025"
-PLACEHOLDER --- replace with verified citation.
-
-\bibitem{PLACEHOLDER_charan2026}
-%% SEARCH: "LLM RAG FMEA industrial safety automation 2024 2025"
-PLACEHOLDER --- replace with verified citation.
 
 \end{thebibliography}
 
