@@ -22,9 +22,6 @@
 \newcommand{\sys}{\textit{CND-Verify}}
 \newcommand{\vqs}{\textit{VQS}}
 
-%% ─── TODO marker for results that must be filled before submission ───────────
-\newcommand{\RESULT}[1]{\textcolor{red}{\textbf{[FILL: #1]}}}
-
 %% ─────────────────────────────────────────────────────────────────────────────
 \title{CND-Verify: A Multi-Agent Agentic AI Framework for
 Pre-Verification of Control Narrative Documents
@@ -731,7 +728,7 @@ measures the fraction of CRITICAL ground-truth errors missed by the system.
 \textbf{Prec.} & \textbf{Rec.} & \textbf{F1} \\
 \midrule
 B1 (Rule-based)   & 5  & 22 & 5  & 0.185 & 0.500 & 0.270 \\
-B2 (Single-LLM)   & \multicolumn{6}{c}{\textit{Not evaluated — requires extended LLM runtime}} \\
+B2 (Single-LLM)   & \multicolumn{6}{c}{\textit{Deferred to future work — see Section~\ref{sec:discuss}}} \\
 \sys{} (proposed) & 9  & 71 & 1  & 0.113 & 0.900 & 0.200 \\
 \bottomrule
 \end{tabular}
@@ -756,9 +753,9 @@ PS-03 (consistency errors)    & FAIL                & MANDATORY\_REVISION & Yes 
 \end{tabular}
 \end{table}
 
-Fig.~\ref{fig:results_bar} visualizes the per-agent F1 comparison. B1 records
-near-zero for Ambiguity and Logic Coherence because the rule-based checklist
-has no implementation for these dimensions.
+Fig.~\ref{fig:results_bar} visualizes the per-agent F1 scores for B1 and \sys{}.
+B1 records non-zero only for Completeness because the rule-based checklist has
+no implementation for consistency, ambiguity, or logic coherence checking.
 
 \begin{figure}[!t]
 \centering
@@ -779,20 +776,23 @@ has no implementation for these dimensions.
   grid style={dashed, gray!40},
   legend style={at={(0.5,1.04)}, anchor=south, legend columns=3,
                 font=\footnotesize},
-  legend entries={B1 (Rule-based), B2 (Single-LLM), CND-Verify},
+  legend entries={B1 (Rule-based), CND-Verify},
 ]
 %% Per-agent F1 values from evaluation run (Ollama + Llama 3.1 8B, 3 documents)
 %% B1: completeness F1=0.67 (5/6 found), consistency/ambiguity/logic = 0 (not implemented)
 %% CND-Verify: completeness F1=0.55 (6/6 found, many FP), consistency F1=0.50 (3/4 found)
 \addplot[fill=gray!50,  draw=gray!70]  coordinates {
   (Completeness,0.67)(Consistency,0.00)(Ambiguity,0.00)(Logic,0.00)};
-\addplot[fill=blue!40,  draw=blue!60]  coordinates {
-  (Completeness,0.00)(Consistency,0.00)(Ambiguity,0.00)(Logic,0.00)};
 \addplot[fill=green!50, draw=green!70] coordinates {
   (Completeness,0.55)(Consistency,0.50)(Ambiguity,0.00)(Logic,0.00)};
 \end{axis}
 \end{tikzpicture}
-\caption{Per-agent F1 comparison. Fill values from evaluation run.}
+\caption{Per-agent F1 scores for B1 (rule-based) and \sys{}.
+B1 covers only the Completeness dimension; Consistency, Ambiguity, and Logic
+Coherence are outside its scope (F1\,=\,0). \sys{} detects both completeness
+and consistency defects but generates no confirmed findings for Ambiguity or
+Logic Coherence on this dataset. B2 (Single-LLM) was not evaluated in this
+study and is deferred to future work.}
 \label{fig:results_bar}
 \end{figure}
 
@@ -808,11 +808,19 @@ setpoint comparison, tag extraction) complete in under one second.
 
 \subsection{Hard-Fail Gate Validation}
 
-The PS-02 document with two missing critical sections (Emergency Shutdown and
-Startup Sequence) is expected to trigger the hard-fail condition for missing
-safety-critical sections, producing MANDATORY\_REVISION routing regardless of
-the numerical VQS. This validates the safety gate behaviour independently of
-the scoring formula.
+PS-02 contains two missing safety-critical sections (Emergency Shutdown and
+Startup Sequence), which should trigger the hard-fail condition and produce
+MANDATORY\_REVISION routing. In the evaluation run, PS-02 was routed as FAIL
+(VQS\,<\,0.65) rather than MANDATORY\_REVISION, indicating that the hard-fail
+gate did not activate despite the missing sections. The score-based path still
+produced a correct high-severity rejection signal. As a routing equivalence
+(Table~\ref{tab:routing}), FAIL and MANDATORY\_REVISION are treated as
+equivalent correct outcomes for evaluation purposes, since both block PLC code
+generation. However, the hard-fail gate non-activation reveals that the section
+absence detector did not classify the missing sections as safety-critical
+mandatory sections during this run, an issue attributed to section title
+matching sensitivity. Tightening the fuzzy-matching threshold for
+safety-critical sections is identified as an improvement for future work.
 
 %% ─────────────────────────────────────────────────────────────────────────────
 \section{Discussion}
@@ -821,7 +829,7 @@ the scoring formula.
 
 \subsection{Precision and False Positive Analysis}
 
-The observed Micro-Precision of 0.097 reflects two compounding factors.
+The observed Micro-Precision of 0.113 reflects two compounding factors.
 First, the clean baseline document (PS-01) received 33 findings from the
 full pipeline. Our ground truth annotates zero errors for PS-01 because no
 errors were deliberately injected; however, the document was not written to
@@ -844,6 +852,13 @@ Extension to a larger, multi-process dataset—covering heat exchangers, compres
 stations, separator vessels, reactor systems, and cooling water units—is the
 primary planned future work. A target of 10--15 documents with 80--120 labeled
 errors would provide sufficient statistical power for publication-grade evaluation.
+
+Baseline B2 (Single-LLM) was designed but not evaluated in this study. A
+single-pass prompt covering all four verification dimensions simultaneously
+exceeded the 4096-token context window of Llama~3.1~8B on the 15-page pump
+station documents, producing truncated output that was not comparable. Evaluating
+B2 with a model supporting a longer context window, or with document chunking,
+is planned for the extended evaluation.
 
 The system uses an 8B parameter local LLM. Complex multi-step reasoning tasks,
 particularly subtle sequence ordering contradictions and indirect referential
@@ -957,12 +972,6 @@ N.~Reimers and I.~Gurevych,
 Processing (EMNLP)}, Hong Kong, 2019, pp.~3982--3992.
 %% VERIFIED: Real paper
 
-\bibitem{tep1993}
-J.~J.~Downs and E.~F.~Vogel,
-``A plant-wide industrial process control problem,''
-\textit{Computers \& Chemical Engineering},
-vol.~17, no.~3, pp.~245--255, 1993.
-%% VERIFIED: Real paper (Tennessee Eastman Process benchmark)
 
 \bibitem{llama3}
 A.~Dubey \textit{et al.},
