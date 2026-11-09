@@ -1,0 +1,190 @@
+{
+  "B1": {
+    "results": [
+      {
+        "doc_id": "PS-01",
+        "skipped": false,
+        "findings_count": 9,
+        "elapsed_s": 0.0,
+        "routing": "N/A",
+        "routing_correct": false,
+        "overall": {
+          "tp": 0,
+          "fp": 9,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": 1.0,
+          "f1": 0.0
+        }
+      },
+      {
+        "doc_id": "PS-02",
+        "skipped": false,
+        "findings_count": 9,
+        "elapsed_s": 0.1,
+        "routing": "N/A",
+        "routing_correct": false,
+        "overall": {
+          "tp": 5,
+          "fp": 4,
+          "fn": 1,
+          "precision": 0.556,
+          "recall": 0.833,
+          "f1": 0.667
+        }
+      },
+      {
+        "doc_id": "PS-03",
+        "skipped": false,
+        "findings_count": 9,
+        "elapsed_s": 0.1,
+        "routing": "N/A",
+        "routing_correct": false,
+        "overall": {
+          "tp": 0,
+          "fp": 9,
+          "fn": 4,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        }
+      }
+    ],
+    "summary": {
+      "n_docs": 3,
+      "micro_precision": 0.185,
+      "micro_recall": 0.5,
+      "micro_f1": 0.27,
+      "routing_accuracy": 0.0,
+      "total_tp": 5,
+      "total_fp": 22,
+      "total_fn": 5
+    }
+  },
+  "CND-Verify": {
+    "results": [
+      {
+        "doc_id": "PS-01",
+        "skipped": false,
+        "error_count_gt": 0,
+        "findings_count": 13,
+        "routing": "NEEDS_REVIEW",
+        "routing_correct": false,
+        "elapsed_s": 124.0,
+        "overall": {
+          "tp": 0,
+          "fp": 13,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": 1.0,
+          "f1": 0.0
+        },
+        "per_agent": {
+          "completeness": {
+            "tp": 0,
+            "fp": 4,
+            "fn": 0
+          },
+          "ambiguity": {
+            "tp": 0,
+            "fp": 6,
+            "fn": 0
+          },
+          "logic_coherence": {
+            "tp": 0,
+            "fp": 3,
+            "fn": 0
+          }
+        }
+      },
+      {
+        "doc_id": "PS-02",
+        "skipped": false,
+        "error_count_gt": 6,
+        "findings_count": 15,
+        "routing": "FAIL",
+        "routing_correct": true,
+        "elapsed_s": 7.0,
+        "overall": {
+          "tp": 2,
+          "fp": 13,
+          "fn": 4,
+          "precision": 0.1333,
+          "recall": 0.3333,
+          "f1": 0.1905
+        },
+        "per_agent": {
+          "completeness": {
+            "tp": 2,
+            "fp": 4,
+            "fn": 4
+          },
+          "consistency": {
+            "tp": 0,
+            "fp": 5,
+            "fn": 0
+          },
+          "ambiguity": {
+            "tp": 0,
+            "fp": 3,
+            "fn": 0
+          },
+          "logic_coherence": {
+            "tp": 0,
+            "fp": 1,
+            "fn": 0
+          }
+        }
+      },
+      {
+        "doc_id": "PS-03",
+        "skipped": false,
+        "error_count_gt": 4,
+        "findings_count": 13,
+        "routing": "MANDATORY_REVISION",
+        "routing_correct": false,
+        "elapsed_s": 21.0,
+        "overall": {
+          "tp": 3,
+          "fp": 10,
+          "fn": 1,
+          "precision": 0.2308,
+          "recall": 0.75,
+          "f1": 0.3529
+        },
+        "per_agent": {
+          "consistency": {
+            "tp": 3,
+            "fp": 3,
+            "fn": 1
+          },
+          "completeness": {
+            "tp": 0,
+            "fp": 4,
+            "fn": 0
+          },
+          "ambiguity": {
+            "tp": 0,
+            "fp": 2,
+            "fn": 0
+          },
+          "logic_coherence": {
+            "tp": 0,
+            "fp": 1,
+            "fn": 0
+          }
+        }
+      }
+    ],
+    "summary": {
+      "n_docs": 3,
+      "micro_precision": 0.122,
+      "micro_recall": 0.5,
+      "micro_f1": 0.196,
+      "routing_accuracy": 0.333,
+      "total_tp": 5,
+      "total_fp": 36,
+      "total_fn": 5
+    }
+  }
+}
