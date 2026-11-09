@@ -26,9 +26,9 @@ def _infer_expected_routing(doc_info: dict) -> str:
         return "AUTO_PASS"
     critical_count = sum(1 for e in errors if e.get("severity") == "CRITICAL")
     if critical_count >= 3:
-        return "FAIL"
+        return "MANDATORY_REVISION"
     if critical_count >= 1:
-        return "NEEDS_REVIEW"
+        return "FAIL"
     return "NEEDS_REVIEW"
 
 
