@@ -375,8 +375,9 @@ def _load_config():
 
 
 # ── Service health ────────────────────────────────────────────────────────────
+@st.cache_data(ttl=60)
 def _check_services() -> dict:
-    """Check real service availability. Returns dict of {name: (ok, detail)}."""
+    """Check real service availability. Cached for 60 s to avoid blocking page load."""
     results = {}
 
     # Ollama
@@ -439,6 +440,29 @@ with st.sidebar:
     st.markdown('<p style="font-size:0.75rem;color:#64748b;margin-top:-10px">Safety Verification Platform</p>', unsafe_allow_html=True)
     st.markdown("---")
 
+    # Quick-start workflow guide
+    _vstate = st.session_state.verification_state
+    _has_docs = bool(st.session_state.uploaded_docs)
+    _has_analysis = bool(_vstate)
+
+    step1_color = "#16a34a" if _has_docs else "#2563eb"
+    step2_color = "#16a34a" if _has_analysis else ("#2563eb" if _has_docs else "#475569")
+    step3_color = "#16a34a" if _has_analysis else "#475569"
+
+    step1_icon = "✓" if _has_docs else "①"
+    step2_icon = "✓" if _has_analysis else ("②" if _has_docs else "②")
+    step3_icon = "✓" if _has_analysis else "③"
+
+    st.markdown(
+        f'<div style="background:#1e293b;border-radius:6px;padding:10px 12px;margin-bottom:10px">'
+        f'<div style="font-size:0.70rem;color:#94a3b8;font-weight:600;letter-spacing:.06em;margin-bottom:8px">QUICK START</div>'
+        f'<div style="font-size:0.78rem;color:{step1_color};margin-bottom:5px">{step1_icon} Upload documents</div>'
+        f'<div style="font-size:0.78rem;color:{step2_color};margin-bottom:5px">{step2_icon} Run analysis</div>'
+        f'<div style="font-size:0.78rem;color:{step3_color}">{step3_icon} Review findings</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
     NAV_ITEMS = [
         "1. Overview Dashboard",
         "2. Document Management",
@@ -452,23 +476,35 @@ with st.sidebar:
         "10. Execution Logs",
         "11. Settings",
     ]
-    page = st.radio("Navigation", NAV_ITEMS, label_visibility="collapsed")
+    # Mark pages that need analysis
+    _needs_analysis = {
+        "4. Safety Findings", "5. Knowledge Graph", "6. RAG Evidence Explorer",
+        "7. Cross-Document Verification", "8. Rule Validation", "10. Execution Logs",
+    }
+    _nav_display = []
+    for item in NAV_ITEMS:
+        if item in _needs_analysis and not _has_analysis:
+            _nav_display.append(f"{item} ·")  # dot suffix = needs analysis first
+        else:
+            _nav_display.append(item)
+
+    page_display = st.radio("Navigation", _nav_display, label_visibility="collapsed")
+    # Map display name back to canonical name
+    page = page_display.rstrip(" ·")
 
     st.markdown("---")
 
     # Quick status
-    vstate = st.session_state.verification_state
-    if vstate:
-        vqs = vstate.get("vqs_scores", {})
+    if _vstate:
+        vqs = _vstate.get("vqs_scores", {})
         score = vqs.get("composite", 0) * 100
         routing = vqs.get("routing_decision", "")
-        color_map = {"AUTO_PASS": "green", "NEEDS_REVIEW": "amber", "FAIL": "red", "MANDATORY_REVISION": "red"}
-        dot_map   = {"AUTO_PASS": "dot-green", "NEEDS_REVIEW": "dot-amber", "FAIL": "dot-red", "MANDATORY_REVISION": "dot-red"}
+        dot_map = {"AUTO_PASS": "dot-green", "NEEDS_REVIEW": "dot-amber", "FAIL": "dot-red", "MANDATORY_REVISION": "dot-red"}
         dot = dot_map.get(routing, "dot-grey")
         st.markdown(
             f'<div style="font-size:0.78rem;color:#94a3b8">Last analysis</div>'
             f'<div style="font-size:0.85rem;color:#e2e8f0;margin-top:2px">'
-            f'<span class="{dot}"></span>{vstate.get("current_doc_name","document")}</div>'
+            f'<span class="{dot}"></span>{_vstate.get("current_doc_name","document")}</div>'
             f'<div style="font-size:0.80rem;color:#94a3b8">Score: <b style="color:#f1f5f9">{score:.0f}%</b> — {routing.replace("_"," ")}</div>',
             unsafe_allow_html=True,
         )
@@ -600,8 +636,7 @@ def page_overview():
     with col_right:
         # ── System health ─────────────────────────────────────────────────
         st.markdown('<div class="section-lbl">System Component Health</div>', unsafe_allow_html=True)
-        with st.spinner("Checking services..."):
-            services = _check_services()
+        services = _check_services()
 
         rows = ""
         for name, (ok, detail) in services.items():
@@ -1082,11 +1117,15 @@ def page_findings():
     ]
     st.caption(f"Showing {len(visible)} of {len(findings)} findings")
 
+    first_critical_seen = False
     for f in visible:
-        _finding_card_detailed(f, vstate)
+        is_first_crit = (f.get("severity") == "CRITICAL") and (not first_critical_seen)
+        _finding_card_detailed(f, vstate, expand_as_first_critical=is_first_crit)
+        if f.get("severity") == "CRITICAL":
+            first_critical_seen = True
 
 
-def _finding_card_detailed(f: dict, vstate: dict):
+def _finding_card_detailed(f: dict, vstate: dict, expand_as_first_critical: bool = False):
     fid  = f.get("id", "")
     sev  = f.get("severity", "INFO")
     pg   = f.get("page_number", 0)
@@ -1097,7 +1136,7 @@ def _finding_card_detailed(f: dict, vstate: dict):
     sev_label = {"CRITICAL": "🔴 CRITICAL", "HIGH": "🟠 HIGH", "WARNING": "🟡 WARNING", "INFO": "🔵 INFO"}.get(sev, sev)
     with st.expander(
         f"{status_icon} [{sev_label}]  {f.get('description','')[:90]}",
-        expanded=(sev == "CRITICAL" and cur == "OPEN"),
+        expanded=expand_as_first_critical,
     ):
         # ── Location bar ──────────────────────────────────────────────────────
         loc1, loc2, loc3 = st.columns(3)
@@ -1138,7 +1177,6 @@ def _finding_card_detailed(f: dict, vstate: dict):
                     st.session_state.pdf_views_open.discard(fid)
                 else:
                     st.session_state.pdf_views_open.add(fid)
-                st.rerun()
             if fid in st.session_state.pdf_views_open:
                 _render_pdf_inline(pdf_path, pg, f.get("quote",""), sev, border)
 
@@ -1729,7 +1767,6 @@ def page_evaluation():
         if results_list:
             summary = aggregate_results(results_list)
             st.session_state.eval_results = {"results": results_list, "summary": summary}
-            st.rerun()
 
     # ── Display stored results ─────────────────────────────────────────────────
     if not st.session_state.eval_results:
