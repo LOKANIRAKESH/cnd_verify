@@ -145,15 +145,30 @@ st.markdown("""
   [data-testid="stTextArea"] label { color: #374151 !important; font-weight: 500; }
 
   /* ═══ 6. SELECTBOX & MULTISELECT ════════════════════════════════════════════ */
-  [data-testid="stSelectbox"] > div > div,
-  [data-testid="stMultiSelect"] > div > div {
+  /* Streamlit 1.65 uses BaseWeb Select — target [data-baseweb="select"] */
+  [data-testid="stSelectbox"] [data-baseweb="select"] > div,
+  [data-testid="stMultiSelect"] [data-baseweb="select"] > div {
     background-color: #ffffff !important;
     border: 1px solid #cbd5e1 !important;
     border-radius: 6px !important;
+  }
+  /* Value text inside selectbox */
+  [data-testid="stSelectbox"] [data-baseweb="select"] span,
+  [data-testid="stSelectbox"] [data-baseweb="select"] div {
     color: #0f172a !important;
   }
   [data-testid="stSelectbox"] label,
   [data-testid="stMultiSelect"] label { color: #374151 !important; font-weight: 500; }
+  /* Dropdown popup list */
+  [data-baseweb="popover"] ul li,
+  [data-baseweb="menu"] li {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+  }
+  [data-baseweb="popover"] ul li:hover,
+  [data-baseweb="menu"] li:hover { background-color: #f8fafc !important; }
+  [data-baseweb="popover"] ul [aria-selected="true"],
+  [data-baseweb="menu"] [aria-selected="true"] { background-color: #eff6ff !important; }
   /* Multiselect selected tags */
   [data-baseweb="tag"] {
     background-color: #eff6ff !important;
@@ -1047,14 +1062,22 @@ def page_analysis():
 
     # Stage 8: PLC Generator
     vqs = state.get("vqs_scores", {})
-    if run_plc and vqs.get("routing_decision") == "AUTO_PASS":
+    routing_dec = vqs.get("routing_decision", "")
+    # Run PLC if user enabled it AND document is not blocked by a hard-fail
+    # AUTO_PASS → full generation; NEEDS_REVIEW → generate with warning
+    if run_plc and routing_dec in ("AUTO_PASS", "NEEDS_REVIEW"):
         from src.extraction.plc_generator import run_plc_generator
         state_result, ok = _run_stage(8, run_plc_generator, state)
         if ok:
             state = state_result
     else:
         _update_stage(8, "Skipped")
-        reason = "Disabled by user" if not run_plc else f"Routing: {vqs.get('routing_decision','—')} (PLC only for AUTO_PASS)"
+        if not run_plc:
+            reason = "Disabled by user"
+        elif routing_dec in ("FAIL", "MANDATORY_REVISION"):
+            reason = f"Blocked: {routing_dec} — fix critical findings first"
+        else:
+            reason = f"Routing: {routing_dec}"
         exec_log.append({"stage": STAGES[8][0], "status": "Skipped", "elapsed_s": 0, "detail": reason})
 
     # ── Save results ───────────────────────────────────────────────────────────
@@ -1083,6 +1106,60 @@ def page_analysis():
         getattr(st, level)(msg)
 
     st.success("✓ Analysis complete. Navigate to **Safety Findings** to review all findings.")
+
+    # ── PLC Code Results ───────────────────────────────────────────────────────
+    plc_code    = state.get("plc_code", {})
+    plc_summary = state.get("plc_summary", {})
+    routing_now = state.get("vqs_scores", {}).get("routing_decision", "")
+
+    st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-lbl">PLC Code Generator Results</div>', unsafe_allow_html=True)
+
+    if routing_now in ("FAIL", "MANDATORY_REVISION"):
+        st.error(
+            f"🚫 PLC generation blocked — routing is **{routing_now.replace('_',' ')}**. "
+            f"Fix all CRITICAL/HIGH findings in Safety Findings, then re-run analysis."
+        )
+    elif not run_plc:
+        st.info("PLC generation was disabled by the checkbox above. Enable it and re-run.")
+    elif plc_code:
+        gen_n  = plc_summary.get("clean_count", 0)
+        skip_n = plc_summary.get("skipped_count", 0)
+        dirty  = plc_summary.get("dirty_count", 0)
+
+        pc1, pc2, pc3 = st.columns(3)
+        _kpi(pc1, gen_n,  "Blocks Generated", "green")
+        _kpi(pc2, dirty,  "Dirty Tags Skipped", "amber" if dirty else "")
+        _kpi(pc3, skip_n, "Unknown Type Skipped")
+
+        if routing_now == "NEEDS_REVIEW":
+            st.warning(
+                "⚠ Document has findings — PLC code generated for **clean tags only** "
+                "(tags not mentioned in CRITICAL/HIGH findings). "
+                "Review Safety Findings before using this code in production."
+            )
+
+        if plc_code:
+            tag_list = sorted(plc_code.keys())
+            tab_names = tag_list[:10]  # cap at 10 tabs
+            if len(tag_list) > 10:
+                st.caption(f"Showing first 10 of {len(tag_list)} function blocks.")
+
+            if tag_list:
+                tabs = st.tabs(tab_names)
+                for tab, tag in zip(tabs, tab_names):
+                    with tab:
+                        info = plc_code[tag]
+                        st.caption(f"Equipment class: **{info['equipment_class']}** · Page: {info.get('page','—')}")
+                        st.code(info["code"], language="pascal")
+
+        if plc_summary.get("skipped_tags"):
+            with st.expander(f"Skipped tags ({skip_n})", expanded=False):
+                st.caption("These tags were skipped because they appear in findings or have unknown equipment type.")
+                chips = " ".join(f'<span class="tag">{t}</span>' for t in plc_summary["skipped_tags"])
+                st.markdown(chips, unsafe_allow_html=True)
+    else:
+        st.info("No PLC code generated. Tags may all be dirty (in findings) or have unknown equipment types.")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
