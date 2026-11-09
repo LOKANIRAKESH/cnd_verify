@@ -54,20 +54,33 @@ st.markdown("""
     background-color: #0f172a !important;
     border-right: 1px solid #1e293b !important;
   }
-  /* Specific text elements — no wildcard */
+  /* Specific text elements — no wildcard, but force color on all text nodes */
   [data-testid="stSidebar"] p,
   [data-testid="stSidebar"] span,
   [data-testid="stSidebar"] label,
-  [data-testid="stSidebar"] .stMarkdown { color: #cbd5e1; }
+  [data-testid="stSidebar"] .stMarkdown { color: #cbd5e1 !important; }
   [data-testid="stSidebar"] h1,
   [data-testid="stSidebar"] h2,
   [data-testid="stSidebar"] h3 { color: #f8fafc !important; }
   [data-testid="stSidebar"] hr { border-color: #1e293b; }
-  /* Radio nav items */
-  [data-testid="stSidebar"] [data-testid="stRadio"] label {
-    color: #94a3b8 !important; padding: 4px 8px; border-radius: 4px;
+
+  /* Radio nav — Streamlit 1.65 puts the label text inside label > div > p */
+  [data-testid="stSidebar"] [data-testid="stRadio"] label,
+  [data-testid="stSidebar"] [data-testid="stRadio"] label p,
+  [data-testid="stSidebar"] [data-testid="stRadio"] label div,
+  [data-testid="stSidebar"] [data-testid="stRadio"] label span {
+    color: #94a3b8 !important;
   }
-  [data-testid="stSidebar"] [data-testid="stRadio"] label:hover { color: #e2e8f0 !important; }
+  [data-testid="stSidebar"] [data-testid="stRadio"] label:hover,
+  [data-testid="stSidebar"] [data-testid="stRadio"] label:hover p,
+  [data-testid="stSidebar"] [data-testid="stRadio"] label:hover span {
+    color: #e2e8f0 !important;
+  }
+  /* Selected radio item */
+  [data-testid="stSidebar"] [data-testid="stRadio"] [aria-checked="true"] ~ div p,
+  [data-testid="stSidebar"] [data-testid="stRadio"] [aria-checked="true"] ~ div {
+    color: #f8fafc !important; font-weight: 600;
+  }
   [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p { color: #cbd5e1 !important; }
 
   /* ═══ 3. EXPANDER (Streamlit 1.65 uses <details>) ═══════════════════════════ */
