@@ -2,7 +2,7 @@
 # Edit these values to change system behaviour
 
 model:
-  name: llama3.1          # Ollama model name — run: ollama pull llama3.1
+  name: llama3.1:latest    # Ollama model name — run: ollama pull llama3.1
   temperature: 0          # 0 = deterministic, more consistent findings
   timeout_seconds: 120    # Max wait per LLM call
 

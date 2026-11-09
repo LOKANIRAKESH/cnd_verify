@@ -570,7 +570,7 @@ def page_overview():
                     showlegend=False, paper_bgcolor="#ffffff", plot_bgcolor="#ffffff",
                     font={"color": "#0f172a", "size": 11},
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
 
             # Agent bar
             agent_counts = {}
@@ -593,7 +593,7 @@ def page_overview():
                     yaxis=dict(tickfont={"size": 10, "color": "#0f172a"}),
                     font={"color": "#0f172a"},
                 )
-                st.plotly_chart(fig2, use_container_width=True)
+                st.plotly_chart(fig2, width='stretch')
         else:
             _empty("No findings yet. Run CND Analysis to see results.", "📊")
 
@@ -1185,7 +1185,7 @@ def _render_pdf_inline(pdf_path: str, page_num: int, search_text: str, severity:
         pix = page.get_pixmap(matrix=fitz.Matrix(1.6, 1.6), alpha=False)
         png = pix.tobytes("png")
         doc.close()
-        st.image(png, caption=f"Page {page_num} — highlighted text shows finding location", use_container_width=True)
+        st.image(png, caption=f"Page {page_num} — highlighted text shows finding location", width='stretch')
     except Exception as e:
         st.caption(f"Could not render PDF page: {e}")
 
@@ -1325,7 +1325,7 @@ def page_knowledge_graph():
                 font=dict(size=10, color="#64748b"), xanchor="center",
             )],
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
     except ImportError:
         st.warning("networkx not installed — cannot render graph visualization.")
@@ -1782,7 +1782,7 @@ def page_evaluation():
             font=dict(color="#0f172a"),
             margin=dict(t=40, b=20, l=20, r=20),
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
     # Per-document table
     st.markdown('<div class="section-lbl">Per-Document Results</div>', unsafe_allow_html=True)
@@ -1973,7 +1973,7 @@ def page_settings():
             paper_bgcolor="#ffffff", plot_bgcolor="#ffffff",
             showlegend=False, font={"color":"#0f172a"},
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
         st.markdown(
             f'<div class="card">'
