@@ -28,15 +28,14 @@
 \title{CND-Verify: A Multi-Agent Framework for Pre-Verification of Control
 Narrative Documents Before PLC Code Generation}
 
-\author{Lokani~Rakesh~and~Padmaja~Bodanapu%
+\author{Lokani~Rakesh%
 \thanks{Manuscript received November 2026. This work is part of an M.Tech
-research project.}%
+research project conducted under guidance from GE Vernova Innovation Labs, India.}%
 \thanks{L.~Rakesh is with the Department of Computer Science and Engineering
-(AI/ML specialisation). E-mail: lokanirakesh9912@gmail.com}%
-\thanks{P.~Bodanapu is with GE Vernova Innovation Labs, India.}}
+(AI/ML specialisation). E-mail: lokanirakesh9912@gmail.com}}
 
 \markboth{IEEE Access,~Vol.~XX, No.~XX, 2026}%
-{Rakesh \MakeLowercase{\textit{et al.}}: CND-Verify Multi-Agent Pre-Verification}
+{Rakesh: CND-Verify Multi-Agent Pre-Verification}
 
 \begin{document}
 \maketitle
@@ -261,15 +260,17 @@ multi-agent verification to human-gated PLC code generation.
 
 \begin{figure*}[!t]
 \centering
+\resizebox{\linewidth}{!}{%
 \begin{tikzpicture}[
   font=\small,
-  node distance=5mm and 5mm,
+  node distance=4mm and 4mm,
   box/.style args={#1}{draw=#1!60, rounded corners=3pt,
-                        minimum width=30mm, minimum height=9mm,
+                        minimum width=26mm, minimum height=9mm,
                         align=center, fill=#1!15},
-  agent/.style={box=blue, minimum width=28mm},
+  agent/.style={box=blue, minimum width=26mm},
   stage/.style={draw=gray!40, rounded corners=4pt,
-                minimum width=148mm, minimum height=11mm,
+                minimum width=152mm, text width=150mm,
+                minimum height=13mm,
                 align=center, fill=gray!7},
   arr/.style={-Latex, thick, draw=gray!55},
   lbl/.style={font=\footnotesize\bfseries, text=gray!60}
@@ -277,27 +278,27 @@ multi-agent verification to human-gated PLC code generation.
 
 %% Layer 0
 \node[stage] (L0)
-  {Layer~0 --- Document Ingestion \quad
+  {Layer~0 --- Document Ingestion: \quad
    PDF $\xrightarrow{\text{PyMuPDF}}$ Text + Page Map $\;\cdot\;$
    pdfplumber $\to$ Setpoint Table $\;\cdot\;$
    ISA-5.1 regex $\to$ Tag Inventory};
 
 %% Layer 1
-\node[stage, below=of L0, fill=green!8, draw=green!40] (L1)
-  {Layer~1 --- ISA Domain Knowledge Base (ChromaDB):\quad
+\node[stage, below=5mm of L0, fill=green!8, draw=green!40] (L1)
+  {Layer~1 --- ISA Domain Knowledge Base (ChromaDB): \quad
    ISA-5.1 $\;\cdot\;$ ISA-18.2 $\;\cdot\;$ ISA-84 $\;\cdot\;$
    ISA-88 $\;\cdot\;$ Control Engineering Glossary};
 
-%% Layer 2 label
-\node[lbl, below=7mm of L1] (agtlbl)
+%% Layer 2 label (centered with stage nodes)
+\node[lbl, below=8mm of L1] (agtlbl)
   {Layer~2 --- Multi-Agent Verification (parallel execution)};
 
-%% Agents
-\node[agent, below=2mm of agtlbl]   (CA)  {Completeness\\Agent};
-\node[agent, right=of CA]            (COA) {Consistency\\Agent};
-\node[agent, right=of COA]           (AA)  {Ambiguity\\Agent};
-\node[agent, right=of AA]            (LCA) {Logic\\Coherence Agent};
-\node[box=purple, minimum width=28mm, right=of LCA] (IA)
+%% Agents — centered: 5×26mm + 4×4mm = 146mm, so first agent at x=-60mm
+\node[agent] (CA)  at ([xshift=-60mm,yshift=-8mm]agtlbl.south) {Completeness\\Agent};
+\node[agent, right=4mm of CA]  (COA) {Consistency\\Agent};
+\node[agent, right=4mm of COA] (AA)  {Ambiguity\\Agent};
+\node[agent, right=4mm of AA]  (LCA) {Logic\\Coherence Agent};
+\node[box=purple, minimum width=26mm, right=4mm of LCA] (IA)
   {Image\\Cross-Val.\ Agent};
 
 \begin{pgfonlayer}{background}
@@ -306,29 +307,27 @@ multi-agent verification to human-gated PLC code generation.
         inner sep=4pt, fill=blue!3] {};
 \end{pgfonlayer}
 
-%% Layer 3 --- Score Engine
-\node[stage, below=9mm of CA.south west, anchor=north west,
-      fill=orange!8, draw=orange!40]
-  (SE) at ([yshift=-9mm]CA.south -| L0.west)
-  {Layer~3 --- Score Engine:\quad
+%% Layer 3 --- Score Engine (same width/center as stage nodes)
+\node[stage, below=10mm of AA, fill=orange!8, draw=orange!40] (SE)
+  {Layer~3 --- Score Engine: \quad
    $\text{VQS} = 0.28\,S_c + 0.28\,S_n + 0.24\,S_a + 0.15\,S_l + 0.05\,S_i$
    $\;\Rightarrow\;$ AUTO\_PASS $\;/\;$ NEEDS\_REVIEW $\;/\;$
    FAIL $\;/\;$ MANDATORY\_REVISION};
 
 %% Layer 4 --- HITL
-\node[stage, below=of SE, fill=yellow!8, draw=yellow!60!black!40] (HITL)
-  {Layer~4 --- Human-in-the-Loop (Streamlit HITL):\quad
+\node[stage, below=5mm of SE, fill=yellow!8, draw=yellow!60!black!40] (HITL)
+  {Layer~4 --- Human-in-the-Loop (Streamlit HITL): \quad
    Safety Findings Review $\;\cdot\;$ Engineer Sign-Off $\;\cdot\;$
    Routing Gate};
 
 %% Layer 5 --- PLC
-\node[stage, below=of HITL, fill=red!8, draw=red!35] (PLC)
-  {Layer~5 --- PLC Code Generation (IEC~61131-3 Structured Text):\quad
+\node[stage, below=5mm of HITL, fill=red!8, draw=red!35] (PLC)
+  {Layer~5 --- PLC Code Generation (IEC~61131-3 Structured Text): \quad
    Clean tags only $\;\cdot\;$ Dirty tags (in CRITICAL/HIGH findings) blocked};
 
 %% Vertical flow arrows
 \draw[arr] (L0)   -- (L1);
-\draw[arr] (L1)   -- (agtlbl);
+\draw[arr] (L1.south) -- (agtlbl.north);
 \draw[arr] (SE)   -- (HITL);
 \draw[arr] (HITL) -- (PLC);
 
@@ -343,7 +342,8 @@ multi-agent verification to human-gated PLC code generation.
     (L1.south -| \N.north) -- (\N.north);
 }
 
-\end{tikzpicture}
+\end{tikzpicture}%
+}
 \caption{Architecture of \sys{}. Agents execute in parallel over the shared
 \textit{VerificationState} and retrieve relevant ISA clauses from the domain
 knowledge base (dashed green arrows). The Score Engine computes the weighted
@@ -972,7 +972,7 @@ threshold calibration as the primary improvement target for future work.
 \section*{Acknowledgment}
 %% ─────────────────────────────────────────────────────────────────────────────
 
-The authors thank GE Vernova Innovation Labs, India, for the original problem
+The author thanks GE Vernova Innovation Labs, India, for the original problem
 statement (Idea Card ID:~03 --- ``Extract logic information from Control
 Narrative using Generative AI / Agentic AI'') and for guidance on industrial
 CND standards and typical project workflows.
