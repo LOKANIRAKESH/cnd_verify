@@ -28,12 +28,11 @@
 \title{CND-Verify: A Multi-Agent Framework for Pre-Verification of Control
 Narrative Documents Before PLC Code Generation}
 
-\author{Lokani~Rakesh%
+\author{Lokani~Rakesh~and~Padmaja~Bodanapu%
 \thanks{Manuscript received November 2026. This work is part of an M.Tech
 research project.}%
 \thanks{L.~Rakesh is with the Department of Computer Science and Engineering
 (AI/ML specialisation). E-mail: lokanirakesh9912@gmail.com}%
-\and Padmaja~Bodanapu%
 \thanks{P.~Bodanapu is with GE Vernova Innovation Labs, India.}}
 
 \markboth{IEEE Access,~Vol.~XX, No.~XX, 2026}%
@@ -265,9 +264,9 @@ multi-agent verification to human-gated PLC code generation.
 \begin{tikzpicture}[
   font=\small,
   node distance=5mm and 5mm,
-  box/.style args={##1}{draw=##1!60, rounded corners=3pt,
+  box/.style args={#1}{draw=#1!60, rounded corners=3pt,
                         minimum width=30mm, minimum height=9mm,
-                        align=center, fill=##1!15},
+                        align=center, fill=#1!15},
   agent/.style={box=blue, minimum width=28mm},
   stage/.style={draw=gray!40, rounded corners=4pt,
                 minimum width=148mm, minimum height=11mm,
@@ -395,8 +394,8 @@ agent reports are complete.
   font=\small,
   >=Latex,
   every node/.style={align=center},
-  stage/.style args={##1}{draw=##1!50, rounded corners=3pt,
-                           fill=##1!12, minimum width=24mm,
+  stage/.style args={#1}{draw=#1!50, rounded corners=3pt,
+                           fill=#1!12, minimum width=24mm,
                            minimum height=9mm},
   arr/.style={->, thick, draw=gray!60},
   par/.style={draw=blue!40, dashed, rounded corners=4pt,
