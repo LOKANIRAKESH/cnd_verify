@@ -32,24 +32,196 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── Global CSS — Light Professional Theme ─────────────────────────────────────
+# ── Global CSS — Light Professional Theme (Streamlit 1.65) ────────────────────
 st.markdown("""
 <style>
-  /* Base */
-  .stApp { background: #f1f5f9; }
-  section[data-testid="stMain"] > div { background: #f1f5f9; }
-
-  /* Sidebar */
-  section[data-testid="stSidebar"] {
-    background: #0f172a !important;
-    border-right: 1px solid #1e293b;
+  /* ═══ 1. PAGE BACKGROUND ═══════════════════════════════════════════════════ */
+  .stApp,
+  [data-testid="stAppViewContainer"],
+  [data-testid="stAppViewContainer"] > .main,
+  [data-testid="stAppViewContainer"] > .main > .block-container {
+    background-color: #f1f5f9 !important;
   }
-  section[data-testid="stSidebar"] * { color: #cbd5e1 !important; }
-  section[data-testid="stSidebar"] .stRadio label { color: #94a3b8 !important; }
-  section[data-testid="stSidebar"] h1,
-  section[data-testid="stSidebar"] h2,
-  section[data-testid="stSidebar"] h3 { color: #f8fafc !important; }
+  .block-container {
+    padding-top: 1.5rem !important;
+    padding-bottom: 2rem !important;
+    max-width: 100% !important;
+  }
 
+  /* ═══ 2. SIDEBAR ════════════════════════════════════════════════════════════ */
+  [data-testid="stSidebar"],
+  [data-testid="stSidebar"] > div:first-child {
+    background-color: #0f172a !important;
+    border-right: 1px solid #1e293b !important;
+  }
+  /* Specific text elements — no wildcard */
+  [data-testid="stSidebar"] p,
+  [data-testid="stSidebar"] span,
+  [data-testid="stSidebar"] label,
+  [data-testid="stSidebar"] .stMarkdown { color: #cbd5e1; }
+  [data-testid="stSidebar"] h1,
+  [data-testid="stSidebar"] h2,
+  [data-testid="stSidebar"] h3 { color: #f8fafc !important; }
+  [data-testid="stSidebar"] hr { border-color: #1e293b; }
+  /* Radio nav items */
+  [data-testid="stSidebar"] [data-testid="stRadio"] label {
+    color: #94a3b8 !important; padding: 4px 8px; border-radius: 4px;
+  }
+  [data-testid="stSidebar"] [data-testid="stRadio"] label:hover { color: #e2e8f0 !important; }
+  [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p { color: #cbd5e1 !important; }
+
+  /* ═══ 3. EXPANDER (Streamlit 1.65 uses <details>) ═══════════════════════════ */
+  details[data-testid="stExpander"] {
+    background-color: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 6px !important;
+    margin-bottom: 8px;
+  }
+  details[data-testid="stExpander"] > summary {
+    background-color: #f8fafc !important;
+    border-radius: 6px !important;
+    padding: 10px 14px !important;
+    color: #0f172a !important;
+    font-weight: 500;
+  }
+  details[data-testid="stExpander"][open] > summary {
+    border-radius: 6px 6px 0 0 !important;
+    border-bottom: 1px solid #e2e8f0 !important;
+  }
+  details[data-testid="stExpander"] > div[data-testid="stExpanderDetails"] {
+    background-color: #ffffff !important;
+    border-radius: 0 0 6px 6px !important;
+    padding: 12px 16px !important;
+    color: #0f172a;
+  }
+
+  /* ═══ 4. BUTTONS ════════════════════════════════════════════════════════════ */
+  button[data-testid="baseButton-primary"] {
+    background-color: #2563eb !important;
+    color: #ffffff !important;
+    border: none !important;
+    border-radius: 6px !important;
+    font-weight: 600 !important;
+    padding: 8px 20px !important;
+  }
+  button[data-testid="baseButton-primary"]:hover {
+    background-color: #1d4ed8 !important;
+  }
+  button[data-testid="baseButton-secondary"] {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 6px !important;
+  }
+
+  /* ═══ 5. TEXT INPUTS ════════════════════════════════════════════════════════ */
+  [data-testid="stTextInput"] input,
+  [data-testid="stTextArea"] textarea {
+    background-color: #ffffff !important;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 6px !important;
+    color: #0f172a !important;
+    padding: 8px 12px !important;
+  }
+  [data-testid="stTextInput"] input:focus,
+  [data-testid="stTextArea"] textarea:focus {
+    border-color: #2563eb !important;
+    box-shadow: 0 0 0 2px rgba(37,99,235,0.15) !important;
+  }
+  [data-testid="stTextInput"] label,
+  [data-testid="stTextArea"] label { color: #374151 !important; font-weight: 500; }
+
+  /* ═══ 6. SELECTBOX & MULTISELECT ════════════════════════════════════════════ */
+  [data-testid="stSelectbox"] > div > div,
+  [data-testid="stMultiSelect"] > div > div {
+    background-color: #ffffff !important;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 6px !important;
+    color: #0f172a !important;
+  }
+  [data-testid="stSelectbox"] label,
+  [data-testid="stMultiSelect"] label { color: #374151 !important; font-weight: 500; }
+  /* Multiselect selected tags */
+  [data-baseweb="tag"] {
+    background-color: #eff6ff !important;
+    color: #1d4ed8 !important;
+    border: 1px solid #bfdbfe !important;
+    border-radius: 4px !important;
+  }
+
+  /* ═══ 7. TABS ═══════════════════════════════════════════════════════════════ */
+  [data-baseweb="tab-list"] {
+    background-color: #ffffff !important;
+    border-bottom: 2px solid #e2e8f0 !important;
+    gap: 4px;
+    padding: 0 4px;
+  }
+  [data-baseweb="tab"] {
+    background-color: #f8fafc !important;
+    color: #64748b !important;
+    border-radius: 6px 6px 0 0 !important;
+    border: 1px solid #e2e8f0 !important;
+    border-bottom: none !important;
+    font-weight: 500;
+    padding: 8px 16px !important;
+  }
+  [data-baseweb="tab"][aria-selected="true"] {
+    background-color: #2563eb !important;
+    color: #ffffff !important;
+    border-color: #2563eb !important;
+  }
+  [data-baseweb="tab-panel"] {
+    background-color: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    border-top: none !important;
+    border-radius: 0 0 8px 8px !important;
+    padding: 16px !important;
+  }
+
+  /* ═══ 8. FILE UPLOADER ══════════════════════════════════════════════════════ */
+  [data-testid="stFileUploaderDropzone"] {
+    background-color: #f8fafc !important;
+    border: 2px dashed #cbd5e1 !important;
+    border-radius: 8px !important;
+    color: #475569 !important;
+  }
+  [data-testid="stFileUploaderDropzone"]:hover {
+    border-color: #2563eb !important;
+    background-color: #eff6ff !important;
+  }
+  [data-testid="stFileUploaderDropzone"] p,
+  [data-testid="stFileUploaderDropzone"] span { color: #475569 !important; }
+
+  /* ═══ 9. CHECKBOX & RADIO ════════════════════════════════════════════════════ */
+  [data-testid="stCheckbox"] label,
+  [data-testid="stRadio"] label { color: #0f172a !important; }
+  [data-testid="stWidgetLabel"] p { color: #374151 !important; font-weight: 500; }
+
+  /* ═══ 10. ALERTS / NOTIFICATIONS ════════════════════════════════════════════ */
+  [data-testid="stAlert"],
+  [data-testid="stNotification"] { border-radius: 6px !important; }
+
+  /* ═══ 11. PROGRESS BAR ══════════════════════════════════════════════════════ */
+  [data-testid="stProgress"] > div > div {
+    background-color: #e2e8f0 !important;
+    border-radius: 4px;
+  }
+  [data-testid="stProgress"] > div > div > div {
+    background-color: #2563eb !important;
+    border-radius: 4px;
+  }
+
+  /* ═══ 12. SPINNER ════════════════════════════════════════════════════════════ */
+  [data-testid="stSpinner"] p { color: #64748b !important; }
+
+  /* ═══ 13. CAPTION / SMALL TEXT ══════════════════════════════════════════════ */
+  [data-testid="stCaptionContainer"] p,
+  .stCaption p { color: #64748b !important; font-size: 0.80rem; }
+
+  /* ═══ 14. MARKDOWN BODY TEXT ════════════════════════════════════════════════ */
+  [data-testid="stMarkdownContainer"] p { color: #0f172a; }
+
+  /* ═══ 15. CUSTOM COMPONENT CLASSES ══════════════════════════════════════════ */
   /* Cards */
   .card {
     background: #ffffff;
@@ -73,17 +245,8 @@ st.markdown("""
     padding: 18px 0 14px 0;
     margin-bottom: 20px;
   }
-  .page-title {
-    font-size: 1.45rem;
-    font-weight: 700;
-    color: #0f172a;
-    margin: 0;
-  }
-  .page-sub {
-    font-size: 0.85rem;
-    color: #64748b;
-    margin-top: 3px;
-  }
+  .page-title { font-size: 1.45rem; font-weight: 700; color: #0f172a; margin: 0; }
+  .page-sub   { font-size: 0.85rem; color: #64748b; margin-top: 3px; }
 
   /* KPI tiles */
   .kpi {
@@ -93,18 +256,15 @@ st.markdown("""
     padding: 16px 20px;
     text-align: center;
   }
-  .kpi-val { font-size: 2rem; font-weight: 700; color: #0f172a; line-height: 1.1; }
-  .kpi-lbl { font-size: 0.72rem; color: #64748b; text-transform: uppercase; letter-spacing: .06em; margin-top: 4px; }
+  .kpi-val       { font-size: 2rem; font-weight: 700; color: #0f172a; line-height: 1.1; }
+  .kpi-lbl       { font-size: 0.72rem; color: #64748b; text-transform: uppercase; letter-spacing: .06em; margin-top: 4px; }
   .kpi-val.red   { color: #dc2626; }
   .kpi-val.amber { color: #d97706; }
   .kpi-val.green { color: #16a34a; }
   .kpi-val.blue  { color: #2563eb; }
 
   /* Severity badges */
-  .badge {
-    display: inline-block; padding: 2px 9px; border-radius: 999px;
-    font-size: 0.70rem; font-weight: 700; letter-spacing: .05em;
-  }
+  .badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 0.70rem; font-weight: 700; letter-spacing: .05em; }
   .badge-CRITICAL { background: #fee2e2; color: #991b1b; }
   .badge-HIGH     { background: #ffedd5; color: #9a3412; }
   .badge-WARNING  { background: #fef9c3; color: #854d0e; }
@@ -114,35 +274,35 @@ st.markdown("""
   .badge-WARN     { background: #fef9c3; color: #854d0e; }
   .badge-NA       { background: #f1f5f9; color: #475569; }
 
-  /* Status dot */
-  .dot-green  { display: inline-block; width:8px; height:8px; border-radius:50%; background:#16a34a; margin-right:6px; }
-  .dot-red    { display: inline-block; width:8px; height:8px; border-radius:50%; background:#dc2626; margin-right:6px; }
-  .dot-amber  { display: inline-block; width:8px; height:8px; border-radius:50%; background:#d97706; margin-right:6px; }
-  .dot-grey   { display: inline-block; width:8px; height:8px; border-radius:50%; background:#94a3b8; margin-right:6px; }
+  /* Status dots */
+  .dot-green { display:inline-block; width:8px; height:8px; border-radius:50%; background:#16a34a; margin-right:6px; }
+  .dot-red   { display:inline-block; width:8px; height:8px; border-radius:50%; background:#dc2626; margin-right:6px; }
+  .dot-amber { display:inline-block; width:8px; height:8px; border-radius:50%; background:#d97706; margin-right:6px; }
+  .dot-grey  { display:inline-block; width:8px; height:8px; border-radius:50%; background:#94a3b8; margin-right:6px; }
 
-  /* Table */
+  /* Tables */
   .tbl { width:100%; border-collapse:collapse; font-size:0.82rem; }
   .tbl th { background:#f8fafc; color:#475569; font-weight:600; padding:8px 12px; text-align:left; border-bottom:2px solid #e2e8f0; }
   .tbl td { padding:8px 12px; border-bottom:1px solid #f1f5f9; color:#0f172a; vertical-align:top; }
   .tbl tr:hover td { background:#f8fafc; }
 
-  /* Finding card */
+  /* Finding card (severity-colored left border) */
   .finding {
     background: #ffffff;
     border-left: 4px solid #e2e8f0;
-    border-radius: 0 8px 8px 0;
-    padding: 14px 18px;
-    margin-bottom: 10px;
     border-top: 1px solid #f1f5f9;
     border-right: 1px solid #f1f5f9;
     border-bottom: 1px solid #f1f5f9;
+    border-radius: 0 8px 8px 0;
+    padding: 14px 18px;
+    margin-bottom: 10px;
   }
   .finding.CRITICAL { border-left-color: #dc2626; }
   .finding.HIGH     { border-left-color: #ea580c; }
   .finding.WARNING  { border-left-color: #ca8a04; }
   .finding.INFO     { border-left-color: #2563eb; }
 
-  /* Stage row */
+  /* Stage rows (pipeline progress) */
   .stage-row {
     display:flex; align-items:center; padding:10px 16px;
     background:#ffffff; border:1px solid #e2e8f0; border-radius:6px; margin-bottom:6px;
@@ -151,7 +311,7 @@ st.markdown("""
   .stage-name { flex:1; font-size:0.85rem; color:#0f172a; font-weight:500; }
   .stage-time { font-size:0.75rem; color:#64748b; margin-right:12px; }
 
-  /* Code block */
+  /* Evidence chunk */
   .evidence-chunk {
     background: #f8fafc; border: 1px solid #e2e8f0; border-radius:6px;
     padding: 12px 16px; font-size: 0.80rem; color: #334155;
@@ -161,38 +321,25 @@ st.markdown("""
   /* Rule row */
   .rule-row {
     background:#ffffff; border:1px solid #e2e8f0; border-radius:6px;
-    padding:10px 16px; margin-bottom:6px; font-size:0.82rem;
+    padding:10px 16px; margin-bottom:6px; font-size:0.82rem; color:#0f172a;
   }
 
-  /* Progress bar custom */
-  .prog-bar-bg { background:#e2e8f0; border-radius:4px; height:6px; width:100%; }
+  /* Custom progress bar */
+  .prog-bar-bg   { background:#e2e8f0; border-radius:4px; height:6px; width:100%; }
   .prog-bar-fill { background:#2563eb; border-radius:4px; height:6px; }
 
   /* Section label */
-  .section-lbl { font-size:0.75rem; font-weight:600; color:#64748b; text-transform:uppercase; letter-spacing:.07em; margin-bottom:10px; }
+  .section-lbl { font-size:0.75rem; font-weight:600; color:#64748b; text-transform:uppercase; letter-spacing:.07em; margin-bottom:10px; display:block; }
 
   /* Empty state */
-  .empty-state { text-align:center; padding:40px 20px; color:#94a3b8; }
+  .empty-state { text-align:center; padding:40px 20px; color:#94a3b8; background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; }
   .empty-state .icon { font-size:2.5rem; margin-bottom:10px; }
   .empty-state p { font-size:0.88rem; margin:0; }
 
-  /* Expander clean */
-  div[data-testid="stExpander"] > div { background: #ffffff; border: 1px solid #e2e8f0; border-radius:6px; }
-
-  /* Button styles */
-  div[data-testid="stButton"] button[kind="primary"] {
-    background: #2563eb; color: white; border: none; border-radius:6px;
-    font-weight: 600; padding: 8px 20px;
-  }
-  div[data-testid="stButton"] button[kind="primary"]:hover { background: #1d4ed8; }
-
-  /* Info/success/warning boxes */
-  div[data-testid="stAlert"] { border-radius: 6px; }
-
   /* Thin divider */
-  .divider { border: none; border-top: 1px solid #e2e8f0; margin: 16px 0; }
+  .divider { border:none; border-top:1px solid #e2e8f0; margin:16px 0; }
 
-  /* Tag chip */
+  /* ISA tag chip */
   .tag { display:inline-block; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe;
          border-radius:4px; padding:2px 7px; font-size:0.72rem; font-family:monospace; margin:2px; }
 </style>
