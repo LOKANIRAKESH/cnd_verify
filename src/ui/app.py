@@ -1063,22 +1063,16 @@ def page_analysis():
     # Stage 8: PLC Generator
     vqs = state.get("vqs_scores", {})
     routing_dec = vqs.get("routing_decision", "")
-    # Run PLC if user enabled it AND document is not blocked by a hard-fail
-    # AUTO_PASS → full generation; NEEDS_REVIEW → generate with warning
-    if run_plc and routing_dec in ("AUTO_PASS", "NEEDS_REVIEW"):
+    # Always run PLC when enabled — the generator skips only dirty tags (those
+    # in findings). Clean tags get code even when the document has errors.
+    if run_plc:
         from src.extraction.plc_generator import run_plc_generator
         state_result, ok = _run_stage(8, run_plc_generator, state)
         if ok:
             state = state_result
     else:
         _update_stage(8, "Skipped")
-        if not run_plc:
-            reason = "Disabled by user"
-        elif routing_dec in ("FAIL", "MANDATORY_REVISION"):
-            reason = f"Blocked: {routing_dec} — fix critical findings first"
-        else:
-            reason = f"Routing: {routing_dec}"
-        exec_log.append({"stage": STAGES[8][0], "status": "Skipped", "elapsed_s": 0, "detail": reason})
+        exec_log.append({"stage": STAGES[8][0], "status": "Skipped", "elapsed_s": 0, "detail": "Disabled by user"})
 
     # ── Save results ───────────────────────────────────────────────────────────
     st.session_state.verification_state = state
@@ -1115,12 +1109,7 @@ def page_analysis():
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
     st.markdown('<div class="section-lbl">PLC Code Generator Results</div>', unsafe_allow_html=True)
 
-    if routing_now in ("FAIL", "MANDATORY_REVISION"):
-        st.error(
-            f"🚫 PLC generation blocked — routing is **{routing_now.replace('_',' ')}**. "
-            f"Fix all CRITICAL/HIGH findings in Safety Findings, then re-run analysis."
-        )
-    elif not run_plc:
+    if not run_plc:
         st.info("PLC generation was disabled by the checkbox above. Enable it and re-run.")
     elif plc_code:
         gen_n  = plc_summary.get("clean_count", 0)
@@ -1132,11 +1121,11 @@ def page_analysis():
         _kpi(pc2, dirty,  "Dirty Tags Skipped", "amber" if dirty else "")
         _kpi(pc3, skip_n, "Unknown Type Skipped")
 
-        if routing_now == "NEEDS_REVIEW":
+        if routing_now != "AUTO_PASS":
             st.warning(
-                "⚠ Document has findings — PLC code generated for **clean tags only** "
-                "(tags not mentioned in CRITICAL/HIGH findings). "
-                "Review Safety Findings before using this code in production."
+                f"⚠ Document has findings (routing: **{routing_now.replace('_', ' ')}**) — "
+                f"PLC code generated for **clean tags only** (tags not in CRITICAL/HIGH findings). "
+                f"Review Safety Findings before using this code in production."
             )
 
         if plc_code:
